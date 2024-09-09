@@ -1,5 +1,7 @@
-use crate::game::{GameTextures, WinSize, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Rotation, FromPlayer, SpriteSize, Laser}, TIME_STEP, BASE_SPEED };
+use crate::game::{GameTextures, WinSize, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Rotation, FromPlayer, SpriteSize, Laser, LaserTimer}, TIME_STEP, BASE_SPEED };
 use  bevy::prelude::*;
+
+use super::LASER_SIZE;
 
 // region:    --- Constants
 
@@ -12,7 +14,13 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(PostStartup, player_spawn_system)
-            .add_systems(Update, (player_velocity_event_system, player_rotation_event_system));
+            .add_systems(Update,
+        (
+                    player_rotation_event_system,
+                    player_velocity_event_system,
+                    player_shooting_system
+                ).chain()
+            );
     }
 }
 
@@ -44,16 +52,6 @@ fn player_spawn_system(
         .insert(Rotation::default());
 }
 
-fn player_velocity_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
-    if let Ok(mut velocity) = query.get_single_mut() {
-        velocity.up = if kb.pressed(KeyCode::ArrowUp) {
-            1.
-        } else {
-            0.
-        };
-    }    
-}
-
 fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Rotation, With<Player>>) {
     if let Ok(mut rotation) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowLeft) {
@@ -64,3 +62,47 @@ fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<
         }
     }    
 }
+
+fn player_velocity_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&mut Velocity, &mut Rotation), With<Player>>) {
+    if let Ok((mut velocity, mut rotation)) = query.get_single_mut() {
+        if kb.pressed(KeyCode::ArrowUp) {
+            velocity.accelerate();
+            velocity.calculate_translation(&rotation.rotation_angle_degrees);
+        } else {
+            velocity.decelerate();
+        }
+    }    
+}
+
+fn player_shooting_system(
+    mut commands: Commands,
+    game_textures: Res<GameTextures>,
+    kb: Res<ButtonInput<KeyCode>>,
+    query: Query<(&Transform, &mut Rotation), With<Player>>
+) {
+    if let Ok((transform, mut rotation)) = query.get_single() {
+        if kb.just_pressed(KeyCode::Space) {
+            let laser_translation = transform.translation;
+
+            commands
+                .spawn(SpriteBundle {
+                    texture: game_textures.laser.clone(),
+                    sprite: Sprite {
+                        ..Default::default()
+                    },
+                    transform: Transform {
+                        translation: laser_translation,
+                        scale: Vec3::new(SPRITE_SCALE, SPRITE_SCALE, 1.),
+                        rotation: Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians())
+                    },
+                    ..Default::default()
+                })
+                .insert(Laser)
+                .insert(SpriteSize::from(LASER_SIZE))
+                .insert(Velocity::with_direction(1.,rotation.rotation_angle_degrees))
+                .insert(Movable { auto_despawn: true })
+                .insert(LaserTimer::default());
+        }
+    }
+}
+

@@ -10,12 +10,6 @@ use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnos
 // TODO : - Intégration Vaisseau (prise en compte de la forme, définition taille)
 // ! Ne sais pas faire précédent point, nécessite de se former sur les shaders et meshs
 
-// TODO : - Rotation Vaisseau
-// TODO : - Deplacement fonction rotation
-// TODO : - Tir fonction rotation
-
-// TODO : - Accélération Vaisseau
-// TODO : - Ralentissement Vaisseau
 // TODO : - Gestion du visuel d'accélération
 
 // TODO : - Téléportation Vaisseau (trouver une zone sur la map où aucun danger n'est présent)
@@ -43,7 +37,7 @@ fn main() {
 						maximize: false,
 						..Default::default()
 					},
-					resizable: true,
+					resizable: false,
 					// This will spawn an invisible window
 					// The window will be made visible in the make_visible() system after 3 frames.
 					// This is useful when you want to avoid the white window that shows up before the GPU is ready to render the app.

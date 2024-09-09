@@ -5,7 +5,7 @@ mod components;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, Movable, Player, Rotation, SpriteSize, Velocity};
+use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, Movable, Player, Rotation, SpriteSize, Velocity};
 use player::PlayerPlugin;
 
 // region:     --- Asset Constants
@@ -13,11 +13,16 @@ use player::PlayerPlugin;
 const PLAYER_SPRITE: &str = "spaceShips.png";
 const PLAYER_SIZE: (f32, f32) = (136., 84.);
 
+const LASER_SPRITE: &str = "laser.png";
+const LASER_SIZE: (f32, f32) = (9., 54.);
+
 const SPRITE_SCALE: f32 = 0.5;
 
 // endregion:  --- Asset Constants
 
 // region:    --- Game Constants
+
+const MARGIN: f32 = 100.;
 
 const TIME_STEP: f32 = 1./60.;
 const BASE_SPEED: f32 = 500.;
@@ -35,6 +40,7 @@ pub struct WinSize {
 #[derive(Resource)]
 struct GameTextures {
 	player: Handle<Image>,
+	laser: Handle<Image>,
 }
 
 // endregion:  --- Resources
@@ -46,7 +52,8 @@ impl Plugin for GamePlugin {
         app
         .add_plugins(PlayerPlugin)
         .add_systems(Startup, setup_system)
-		.add_systems(Update, (make_visible, movable_system));
+		.add_systems(Update, make_visible)
+		.add_systems(Update, (rotate_player_system, movable_system, check_laser_timer_system));
     }
 }
 
@@ -67,7 +74,10 @@ fn setup_system(
 	commands.insert_resource(win_size);
 
 	// add GameTextures resource
-	let game_textures = GameTextures { player: asset_server.load(PLAYER_SPRITE) };
+	let game_textures = GameTextures { 
+		player: asset_server.load(PLAYER_SPRITE),
+		laser: asset_server.load(LASER_SPRITE),
+	 };
 	commands.insert_resource(game_textures);
 }
 
@@ -81,41 +91,59 @@ fn make_visible(mut window: Query<&mut Window>, frames: Res<FrameCount>) {
     }
 }
 
-fn movable_system(
-	mut commands: Commands,
-	win_size: Res<WinSize>,
-	mut query: Query<(Entity, &Velocity, &mut Transform, &Movable, &Rotation)>
+fn rotate_player_system(
+	mut query: Query<(&mut Transform, &Rotation), With<Player>>
 ) {
-    for (entity, velocity, mut transform, movable, rotation) in query.iter_mut() {
-        transform.rotation = Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians());
-		
+	if let Ok((mut transform, rotation)) = query.get_single_mut() {
+		transform.rotation = Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians());
+	}
+}
+
+fn movable_system(
+	win_size: Res<WinSize>,
+	mut query: Query<(&Velocity, &mut Transform, &Movable)>
+) {
+    for (velocity, mut transform, movable) in query.iter_mut() {
 		let translation = &mut transform.translation;
-		let (x, y) = calculate_translation(rotation.rotation_angle_degrees, velocity.up);
-		translation.x += x * TIME_STEP * BASE_SPEED;
-		translation.y += y * TIME_STEP * BASE_SPEED;
-		correction_if_screnn_overflow(&win_size, &mut translation.x, &mut translation.y);
+		translation.x += velocity.x * TIME_STEP * BASE_SPEED;
+		translation.y += velocity.y * TIME_STEP * BASE_SPEED;
+		correction_if_screen_overflow(&win_size, &mut translation.x, &mut translation.y);
     }
 }
 
-fn calculate_translation(rotation_angle_degrees: f32, up: f32) -> (f32, f32) {
+fn check_laser_timer_system(
+	mut commands: Commands,
+	time: Res<Time>,
+	mut query: Query<(Entity, &mut LaserTimer)>
+) {
+    for (entity, mut laser_timer) in query.iter_mut() {
+		laser_timer.0.tick(time.delta());
+		if laser_timer.0.just_finished() {
+			commands.entity(entity).despawn();
+		}
+    }
+}
+
+
+fn calculate_translation(rotation_angle_degrees: f32, acceleration: f32) -> (f32, f32) {
 	let angle_radians = rotation_angle_degrees.to_radians();
-	let mut x = angle_radians.sin() * up * -1.;
-	let mut y = angle_radians.cos() * up;
+	let mut x = angle_radians.sin() * acceleration * -1.;
+	let mut y = angle_radians.cos() * acceleration;
 	(x, y)
 }
 
-fn correction_if_screnn_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y: &mut f32) {
+fn correction_if_screen_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y: &mut f32) {
 	let width = win_size.width / 2.;
 	let height = win_size.height / 2.;
 	
-	if *x > width {
+	if *x > width + MARGIN {
 		*x = -width;
-	} else if *x < -width {
+	} else if *x < -width - MARGIN {
 		*x = width;
 	}
-	if *y > height {
+	if *y > height + MARGIN {
 		*y = -height;
-	} else if *y < -height {
+	} else if *y < -height - MARGIN {
 		*y = height;
 	}
 }

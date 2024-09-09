@@ -5,14 +5,59 @@ use bevy::{prelude::{Component, Vec2, Vec3}, time::{Timer, TimerMode}};
 use crate::game::{BASE_SPEED, TIME_STEP};
 
 // region:    --- Common Components
+const MAX_VELOCITY: f32 = 0.5;
+
 #[derive(Component)]
 pub struct Velocity {
-    pub up: f32
+    pub acceleration: f32,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl Default for Velocity {
     fn default() -> Self {
-        Self { up: 0. }
+        Self { acceleration: 0., x: 0., y: 0. }
+    }
+}
+
+impl Velocity {
+
+    pub fn with_direction(acceleration: f32, angle_degrees: f32) -> Self {
+        let angle_radians = angle_degrees.to_radians();
+        Self { acceleration, x: angle_radians.sin() * acceleration * -1., y: angle_radians.cos() * acceleration }
+    }
+
+    pub fn accelerate(&mut self) {
+        self.acceleration += if self.acceleration < MAX_VELOCITY {
+            0.001
+        } else {
+            0.
+        };
+    }
+
+    pub fn decelerate(&mut self) {
+        self.acceleration = 0.;
+    }
+
+    pub fn calculate_translation(&mut self, rotation_angle_degrees: &f32) {
+        let angle_radians = rotation_angle_degrees.to_radians();
+        self.x += angle_radians.sin() * self.acceleration * -1.;
+        self.y += angle_radians.cos() * self.acceleration;
+
+        self.correct_max_velocity();
+    }
+        
+    fn correct_max_velocity(&mut self) {
+        if self.x > MAX_VELOCITY {
+            self.x = MAX_VELOCITY;
+        } else if self.x < -MAX_VELOCITY {
+            self.x = -MAX_VELOCITY;
+        }
+        if self.y > MAX_VELOCITY {
+            self.y = MAX_VELOCITY;
+        } else if self.y < -MAX_VELOCITY {
+            self.y = -MAX_VELOCITY;
+        }
     }
 }
 
@@ -51,6 +96,15 @@ impl Rotation {
 
 #[derive(Component)]
 pub struct Laser;
+
+#[derive(Component)]
+pub struct LaserTimer(pub Timer);
+
+impl Default for LaserTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(3., TimerMode::Once))
+    }
+}
 
 #[derive(Component)]
 pub struct SpriteSize(pub Vec2);
