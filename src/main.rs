@@ -28,7 +28,7 @@ fn main() {
 				primary_window: Some(Window {
 					title: "Rust Asteroids!".into(),
 					name: Some("bevy.app".into()),
-					resolution: (500., 500.).into(),
+					resolution: (900., 700.).into(),
 					present_mode: PresentMode::AutoVsync,
 					// Tells wasm not to override default event handling, like F5, Ctrl+R etc.
 					prevent_default_event_handling: false,
@@ -46,8 +46,8 @@ fn main() {
 				}),
 				..default()
 			}),
-			LogDiagnosticsPlugin::default(),
-			FrameTimeDiagnosticsPlugin,
+			// LogDiagnosticsPlugin::default(),
+			// FrameTimeDiagnosticsPlugin,
 		))
 		.add_plugins(GamePlugin)
 		.run();

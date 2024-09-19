@@ -102,7 +102,7 @@ pub struct LaserTimer(pub Timer);
 
 impl Default for LaserTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(3., TimerMode::Once))
+        Self(Timer::from_seconds(1., TimerMode::Once))
     }
 }
 
@@ -148,3 +148,24 @@ impl Default for ExplosionTimer {
     }
 }
 // endregion: --- Explosion Component
+
+#[derive(Component)]
+pub struct RocketFire;
+
+#[derive(Component)]
+pub struct RocketDrag;
+
+#[derive(Component)]
+pub struct RocketDragTimer {
+    pub span_life: Timer,
+    pub cycle: Timer,
+}
+
+impl Default for RocketDragTimer {
+    fn default() -> Self {
+        Self { span_life: Timer::from_seconds(1., TimerMode::Once), cycle: Timer::from_seconds(0.25, TimerMode::Repeating) }
+    }
+}
+
+#[derive(Component)]
+pub struct LifeTime(pub Timer);

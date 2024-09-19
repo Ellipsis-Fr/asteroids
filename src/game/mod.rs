@@ -5,7 +5,7 @@ mod components;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, Movable, Player, Rotation, SpriteSize, Velocity};
+use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, Rotation, SpriteSize, Velocity};
 use player::PlayerPlugin;
 
 // region:     --- Asset Constants
@@ -15,6 +15,9 @@ const PLAYER_SIZE: (f32, f32) = (136., 84.);
 
 const LASER_SPRITE: &str = "laser.png";
 const LASER_SIZE: (f32, f32) = (9., 54.);
+
+const ROCKET_FIRE_SPRITE: &str = "rocket_fire.png";
+const ROCKET_FIRE_SIZE: (f32, f32) = (2000., 2000.);
 
 const SPRITE_SCALE: f32 = 0.5;
 
@@ -41,6 +44,7 @@ pub struct WinSize {
 struct GameTextures {
 	player: Handle<Image>,
 	laser: Handle<Image>,
+	rocket_fire: Handle<Image>,
 }
 
 // endregion:  --- Resources
@@ -53,7 +57,7 @@ impl Plugin for GamePlugin {
         .add_plugins(PlayerPlugin)
         .add_systems(Startup, setup_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (rotate_player_system, movable_system, check_laser_timer_system));
+		.add_systems(Update, (rotate_player_system, movable_system, check_life_time_system));
     }
 }
 
@@ -77,6 +81,7 @@ fn setup_system(
 	let game_textures = GameTextures { 
 		player: asset_server.load(PLAYER_SPRITE),
 		laser: asset_server.load(LASER_SPRITE),
+		rocket_fire: asset_server.load(ROCKET_FIRE_SPRITE),
 	 };
 	commands.insert_resource(game_textures);
 }
@@ -111,14 +116,14 @@ fn movable_system(
     }
 }
 
-fn check_laser_timer_system(
+fn check_life_time_system(
 	mut commands: Commands,
 	time: Res<Time>,
-	mut query: Query<(Entity, &mut LaserTimer)>
+	mut query: Query<(Entity, &mut LifeTime)>
 ) {
-    for (entity, mut laser_timer) in query.iter_mut() {
-		laser_timer.0.tick(time.delta());
-		if laser_timer.0.just_finished() {
+    for (entity, mut life_time) in query.iter_mut() {
+		life_time.0.tick(time.delta());
+		if life_time.0.just_finished() {
 			commands.entity(entity).despawn();
 		}
     }
