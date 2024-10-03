@@ -4,6 +4,8 @@ use bevy::{prelude::{Component, Vec2, Vec3}, time::{Timer, TimerMode}};
 
 use crate::game::{BASE_SPEED, TIME_STEP};
 
+use rand::{random, Rng};
+
 // region:    --- Common Components
 const MAX_VELOCITY: f32 = 0.5;
 
@@ -35,7 +37,7 @@ impl Velocity {
         };
     }
 
-    pub fn decelerate(&mut self) {
+    pub fn stop(&mut self) {
         self.acceleration = 0.;
     }
 
@@ -156,14 +158,21 @@ pub struct RocketFire;
 pub struct RocketDrag;
 
 #[derive(Component)]
-pub struct RocketDragTimer {
-    pub span_life: Timer,
-    pub cycle: Timer,
-}
+pub struct RocketDragTimer(pub Timer, pub Timer, pub Timer);
 
-impl Default for RocketDragTimer {
-    fn default() -> Self {
-        Self { span_life: Timer::from_seconds(1., TimerMode::Once), cycle: Timer::from_seconds(0.25, TimerMode::Repeating) }
+impl RocketDragTimer {
+    pub fn new(mut factor: f32) -> Self {
+        factor += rand::thread_rng().gen::<f32>();
+        
+        let duration_1_in_seconds = 1. * factor;
+        let duration_2_in_seconds = duration_1_in_seconds + 0.5 * factor;
+        let duration_3_in_seconds = duration_2_in_seconds + 0.25 * factor;
+        
+        Self(
+            Timer::from_seconds(duration_1_in_seconds, TimerMode::Once),
+            Timer::from_seconds(duration_2_in_seconds, TimerMode::Once),
+            Timer::from_seconds(duration_3_in_seconds, TimerMode::Once)
+        )
     }
 }
 

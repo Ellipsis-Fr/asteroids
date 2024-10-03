@@ -4,8 +4,8 @@ mod components;
 
 use std::collections::HashSet;
 
-use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, Rotation, SpriteSize, Velocity};
+use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
+use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, RocketDragTimer, Rotation, SpriteSize, Velocity};
 use player::PlayerPlugin;
 
 // region:     --- Asset Constants
@@ -57,7 +57,7 @@ impl Plugin for GamePlugin {
         .add_plugins(PlayerPlugin)
         .add_systems(Startup, setup_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (rotate_player_system, movable_system, check_life_time_system));
+		.add_systems(Update, (rotate_player_system, movable_system, check_life_time_system, edit_rocket_drag_system));
     }
 }
 
@@ -116,27 +116,6 @@ fn movable_system(
     }
 }
 
-fn check_life_time_system(
-	mut commands: Commands,
-	time: Res<Time>,
-	mut query: Query<(Entity, &mut LifeTime)>
-) {
-    for (entity, mut life_time) in query.iter_mut() {
-		life_time.0.tick(time.delta());
-		if life_time.0.just_finished() {
-			commands.entity(entity).despawn();
-		}
-    }
-}
-
-
-fn calculate_translation(rotation_angle_degrees: f32, acceleration: f32) -> (f32, f32) {
-	let angle_radians = rotation_angle_degrees.to_radians();
-	let mut x = angle_radians.sin() * acceleration * -1.;
-	let mut y = angle_radians.cos() * acceleration;
-	(x, y)
-}
-
 fn correction_if_screen_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y: &mut f32) {
 	let width = win_size.width / 2.;
 	let height = win_size.height / 2.;
@@ -151,4 +130,45 @@ fn correction_if_screen_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y
 	} else if *y < -height - MARGIN {
 		*y = height;
 	}
+}
+
+fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut LifeTime)>) {
+    for (entity, mut life_time) in query.iter_mut() {
+		life_time.0.tick(time.delta());
+		if life_time.0.just_finished() {
+			commands.entity(entity).despawn();
+		}
+    }
+}
+
+fn edit_rocket_drag_system(
+	time: Res<Time>,
+	mut materials: ResMut<Assets<ColorMaterial>>,
+	mut query: Query<(&Handle<ColorMaterial>, &mut RocketDragTimer)>
+) {
+	for (material_handle, mut rocket_drag_timer) in query.iter_mut() {
+		
+		let mut rocket_drag_has_color_changed = |timer: &mut Timer| -> bool {
+			if !timer.finished() {
+				// let timer_1 = &mut rocket_drag_timer.0;
+				timer.tick(time.delta());
+				
+				if timer.just_finished() {
+					
+					if let Some(material) = materials.get_mut(material_handle) {
+						material.color = Color::srgb(1., 0.5, 0.);
+					}
+
+					return true;
+				}
+			}
+
+			false
+		};
+
+		if !rocket_drag_has_color_changed(&mut rocket_drag_timer.0) {
+			rocket_drag_has_color_changed(&mut rocket_drag_timer.1);
+		}
+	}
+
 }

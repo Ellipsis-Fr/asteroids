@@ -1,9 +1,10 @@
 use std::time::Instant;
 
 use crate::game::{GameTextures, WinSize, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Rotation, FromPlayer, SpriteSize, Laser, LaserTimer}, TIME_STEP, BASE_SPEED };
-use  bevy::prelude::*;
-
-use super::{components::{LifeTime, RocketFire}, LASER_SIZE};
+use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::prelude::Circle;
+use rand::{random, Rng};
+use super::{components::{LifeTime, RocketDragTimer, RocketFire}, LASER_SIZE};
 
 // region:    --- Constants
 
@@ -76,7 +77,9 @@ fn player_velocity_event_system(
     mut commands: Commands,
     kb: Res<ButtonInput<KeyCode>>,
     game_textures: Res<GameTextures>,
-    mut query: Query<(&Transform, &mut Velocity, &mut Rotation), With<Player>>
+    mut query: Query<(&Transform, &mut Velocity, &mut Rotation), With<Player>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     if let Ok((transform, mut velocity, mut rotation)) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowUp) {
@@ -102,9 +105,32 @@ fn player_velocity_event_system(
                 })
                 .insert(RocketFire)
                 .insert(LifeTime(Timer::from_seconds(0.05, TimerMode::Once)));
+            
+            
+            if rand::thread_rng().gen::<f32>() > 0.75 {
+                let rocket_drag_timer = RocketDragTimer::new(0.25);
+                let life_time_in_seconds_for_rocket_drag = rocket_drag_timer.2.duration().as_secs_f32();
+                let random_angle = rand::thread_rng().gen_range(-25..=25) as f32;
+                
+                commands
+                    .spawn(MaterialMesh2dBundle {
+                        mesh: meshes.add(Rectangle::new(2., 2.)).into(),
+                        material: materials.add(ColorMaterial::from(Color::xyz(1., 0., 0.))),
+                        transform: Transform {
+                            translation: rocket_fire_translation,
+                            scale: Vec3::new(1., 1., 1.),
+                            ..Default::default()
+                        },
+                        ..default()
+                    })
+                    .insert(Velocity::with_direction(0.25, rotation.rotation_angle_degrees + 180. + random_angle))
+                    .insert(Movable { auto_despawn: true })
+                    .insert(rocket_drag_timer)
+                    .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
+            }
 
         } else {
-            velocity.decelerate();
+            velocity.stop();
         }
     }    
 }
@@ -147,7 +173,7 @@ fn player_shooting_system(
                 .insert(SpriteSize::from(LASER_SIZE))
                 .insert(Velocity::with_direction(1., rotation.rotation_angle_degrees))
                 .insert(Movable { auto_despawn: true })
-                .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));;
+                .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));
         }
     }
 }
