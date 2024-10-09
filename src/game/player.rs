@@ -1,14 +1,11 @@
 use std::time::Instant;
-
-use crate::game::{GameTextures, WinSize, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Rotation, FromPlayer, SpriteSize, Laser, LaserTimer}, TIME_STEP, BASE_SPEED };
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
-use bevy::prelude::Circle;
 use rand::{random, Rng};
-use super::{components::{LifeTime, RocketDragTimer, RocketFire}, LASER_SIZE};
+use super::{GameTextures, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Direction, SpriteSize, Laser, LifeTime, RocketDragTimer, RocketFire}, LASER_SIZE };
+
 
 // region:    --- Constants
 
-const VELOCITY_MAX: f32 = 5.;
 const LASER_COOLDOWN: f32 = 0.25;
 // endregion: --- Constants
 
@@ -29,19 +26,15 @@ impl Plugin for PlayerPlugin {
         (
                     player_rotation_event_system,
                     player_velocity_event_system,
-                    player_shooting_system
+                    edit_rocket_drag_system,
+                    player_shooting_system,
+                    rotate_player_system,
                 ).chain()
             );
     }
 }
 
-fn player_spawn_system(
-	mut commands: Commands,
-	win_size: Res<WinSize>,
-	game_textures: Res<GameTextures>,
-) {
-	// add player
-	let bottom = - win_size.height / 2.;
+fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>) {
 	commands
         .spawn(SpriteBundle {
             texture: game_textures.player.clone(),
@@ -59,10 +52,10 @@ fn player_spawn_system(
         .insert(SpriteSize::from(PLAYER_SIZE))
         .insert(Velocity::default())
         .insert(Movable { auto_despawn: false })
-        .insert(Rotation::default());
+        .insert(Direction::default());
 }
 
-fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Rotation, With<Player>>) {
+fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Direction, With<Player>>) {
     if let Ok(mut rotation) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowLeft) {
             rotation.rotate(1);
@@ -77,7 +70,7 @@ fn player_velocity_event_system(
     mut commands: Commands,
     kb: Res<ButtonInput<KeyCode>>,
     game_textures: Res<GameTextures>,
-    mut query: Query<(&Transform, &mut Velocity, &mut Rotation), With<Player>>,
+    mut query: Query<(&Transform, &mut Velocity, &mut Direction), With<Player>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -140,7 +133,7 @@ fn player_shooting_system(
     time_since_last_shot: Option<ResMut<TimeSinceLastShot>>,
     game_textures: Res<GameTextures>,
     kb: Res<ButtonInput<KeyCode>>,
-    query: Query<(&Transform, &mut Rotation), With<Player>>
+    query: Query<(&Transform, &mut Direction), With<Player>>
 ) {
     if let Ok((transform, mut rotation)) = query.get_single() {
         if kb.just_pressed(KeyCode::Space) {
@@ -185,4 +178,41 @@ fn calculate_shifted_translation(translation_origin: &Vec3, angle: f32, shift: f
     let y = angle_radians.cos() * shift;
 
     Vec3 { x: translation_origin.x + x, y: translation_origin.y + y, z: translation_origin.z }
+}
+
+fn rotate_player_system(mut query: Query<(&mut Transform, &Direction), With<Player>>) {
+	if let Ok((mut transform, rotation)) = query.get_single_mut() {
+		transform.rotation = Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians());
+	}
+}
+
+fn edit_rocket_drag_system(
+	time: Res<Time>,
+	mut materials: ResMut<Assets<ColorMaterial>>,
+	mut query: Query<(&Handle<ColorMaterial>, &mut RocketDragTimer)>
+) {
+	for (material_handle, mut rocket_drag_timer) in query.iter_mut() {
+		
+		let mut rocket_drag_has_color_changed = |timer: &mut Timer, color: Color| -> bool {
+			if !timer.finished() {
+				timer.tick(time.delta());
+				
+				if timer.just_finished() {
+					if let Some(material) = materials.get_mut(material_handle) {
+						material.color = color;
+					}
+
+					return true;
+				}
+
+				return false;
+			}
+
+			false
+		};
+
+		if !rocket_drag_has_color_changed(&mut rocket_drag_timer.0, Color::srgb(1., 0.5, 0.)) {
+			rocket_drag_has_color_changed(&mut rocket_drag_timer.1, Color::srgb(1., 1., 0.));
+		}
+	}
 }

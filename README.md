@@ -16,4 +16,13 @@ My Rust creation of the game "Asteroids"
 
 ## In Progress
 
-Add the asteroids
+### Spawn of the asteroids
+
+Asteroids are spawning from a config file,
+Miss :
+- properties definition mapped on different component
+- logic associated with this properties
+
+### Collision
+
+Player with Asteroids, Bullet with Asteroid and Asteroids with Asteroids

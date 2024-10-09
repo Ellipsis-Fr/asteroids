@@ -1,12 +1,18 @@
 #![allow(unused)]
 mod player;
+mod meteor;
 mod components;
+mod wave;
 
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, RocketDragTimer, Rotation, SpriteSize, Velocity};
+use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, RocketDragTimer, Direction, SpriteSize, Velocity};
 use player::PlayerPlugin;
+use meteor::MeteorPlugin;
+use wave::Wave;
+
+
 
 // region:     --- Asset Constants
 
@@ -18,6 +24,9 @@ const LASER_SIZE: (f32, f32) = (9., 54.);
 
 const ROCKET_FIRE_SPRITE: &str = "rocket_fire.png";
 const ROCKET_FIRE_SIZE: (f32, f32) = (2000., 2000.);
+
+const METEOR_SPRITE: &str = "meteore1.png";
+const METEOR_SIZE: (f32, f32) = (147., 119.);
 
 const SPRITE_SCALE: f32 = 0.5;
 
@@ -45,7 +54,13 @@ struct GameTextures {
 	player: Handle<Image>,
 	laser: Handle<Image>,
 	rocket_fire: Handle<Image>,
+	meteor: Handle<Image>,
 }
+
+// #[derive(Resource)]
+// pub struct WaveResource {
+// 	pub wave: Wave
+// }
 
 // endregion:  --- Resources
 
@@ -55,9 +70,11 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
         .add_plugins(PlayerPlugin)
+        .add_plugins(MeteorPlugin)
         .add_systems(Startup, setup_system)
+		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (rotate_player_system, movable_system, check_life_time_system, edit_rocket_drag_system));
+		.add_systems(Update, (movable_system, check_life_time_system));
     }
 }
 
@@ -82,8 +99,13 @@ fn setup_system(
 		player: asset_server.load(PLAYER_SPRITE),
 		laser: asset_server.load(LASER_SPRITE),
 		rocket_fire: asset_server.load(ROCKET_FIRE_SPRITE),
+		meteor: asset_server.load(METEOR_SPRITE)
 	 };
 	commands.insert_resource(game_textures);
+}
+
+fn init_wave_system(mut commands: Commands) {
+	commands.insert_resource(Wave::new());
 }
 
 fn make_visible(mut window: Query<&mut Window>, frames: Res<FrameCount>) {
@@ -96,17 +118,7 @@ fn make_visible(mut window: Query<&mut Window>, frames: Res<FrameCount>) {
     }
 }
 
-fn rotate_player_system(
-	mut query: Query<(&mut Transform, &Rotation), With<Player>>
-) {
-	if let Ok((mut transform, rotation)) = query.get_single_mut() {
-		transform.rotation = Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians());
-	}
-}
-
-fn movable_system(
-	win_size: Res<WinSize>,
-	mut query: Query<(&Velocity, &mut Transform, &Movable)>
+fn movable_system(win_size: Res<WinSize>, mut query: Query<(&Velocity, &mut Transform, &Movable)>
 ) {
     for (velocity, mut transform, movable) in query.iter_mut() {
 		let translation = &mut transform.translation;
@@ -139,36 +151,4 @@ fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Qu
 			commands.entity(entity).despawn();
 		}
     }
-}
-
-fn edit_rocket_drag_system(
-	time: Res<Time>,
-	mut materials: ResMut<Assets<ColorMaterial>>,
-	mut query: Query<(&Handle<ColorMaterial>, &mut RocketDragTimer)>
-) {
-	for (material_handle, mut rocket_drag_timer) in query.iter_mut() {
-		
-		let mut rocket_drag_has_color_changed = |timer: &mut Timer| -> bool {
-			if !timer.finished() {
-				// let timer_1 = &mut rocket_drag_timer.0;
-				timer.tick(time.delta());
-				
-				if timer.just_finished() {
-					
-					if let Some(material) = materials.get_mut(material_handle) {
-						material.color = Color::srgb(1., 0.5, 0.);
-					}
-
-					return true;
-				}
-			}
-
-			false
-		};
-
-		if !rocket_drag_has_color_changed(&mut rocket_drag_timer.0) {
-			rocket_drag_has_color_changed(&mut rocket_drag_timer.1);
-		}
-	}
-
 }

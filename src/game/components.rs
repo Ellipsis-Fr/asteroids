@@ -71,17 +71,17 @@ pub struct Movable {
 const MAX_ANGLE_VALUES: (f32, f32) = (0., 360.);
 
 #[derive(Component)]
-pub struct Rotation {
+pub struct Direction {
     pub rotation_angle_degrees: f32
 }
 
-impl Default for Rotation {
+impl Default for Direction {
     fn default() -> Self {
         Self { rotation_angle_degrees: 0. }
     }
 }
 
-impl Rotation {
+impl Direction {
     pub fn rotate(&mut self, rotation: i32) {
         self.rotation_angle_degrees += rotation as f32 * TIME_STEP * BASE_SPEED;
         self.correct_angle();
@@ -178,3 +178,23 @@ impl RocketDragTimer {
 
 #[derive(Component)]
 pub struct LifeTime(pub Timer);
+
+
+// region:    --- Meteor Component
+#[derive(Component)]
+pub struct Meteor {
+    pub rotation_speed: f32 // in radians per second
+}
+
+#[derive(Component)]
+pub struct Weight(i32);
+
+#[derive(Component)]
+pub struct MeteorType(u8);
+
+#[derive(Component)]
+pub struct MeteorLevel(u8);
+
+#[derive(Component)]
+pub struct MeteorState(u8);
+// endregion: --- Meteor Component
