@@ -1,10 +1,10 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bevy::prelude::Resource;
-use yaml_rust::{Yaml, YamlLoader};
+use yaml_rust2::{Yaml, YamlLoader};
 
 use super::meteor::{self, MeteorDefinition};
-extern crate yaml_rust;
+extern crate yaml_rust2;
 
 static mut WAVE_COUNT: AtomicUsize = AtomicUsize::new(1);
 const WAVE_DATA: &str = "../../resources/waves.yml";

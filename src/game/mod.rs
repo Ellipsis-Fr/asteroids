@@ -57,11 +57,6 @@ struct GameTextures {
 	meteor: Handle<Image>,
 }
 
-// #[derive(Resource)]
-// pub struct WaveResource {
-// 	pub wave: Wave
-// }
-
 // endregion:  --- Resources
 
 pub struct GamePlugin;
