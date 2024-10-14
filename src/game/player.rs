@@ -58,9 +58,9 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
 fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Direction, With<Player>>) {
     if let Ok(mut rotation) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowLeft) {
-            rotation.rotate(1);
+            rotation.rotate(0.5);
         } else if kb.pressed(KeyCode::ArrowRight) {
-            rotation.rotate(-1);
+            rotation.rotate(-0.5);
             
         }
     }    

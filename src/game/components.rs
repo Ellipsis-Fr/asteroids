@@ -82,8 +82,8 @@ impl Default for Direction {
 }
 
 impl Direction {
-    pub fn rotate(&mut self, rotation: i32) {
-        self.rotation_angle_degrees += rotation as f32 * TIME_STEP * BASE_SPEED;
+    pub fn rotate(&mut self, rotation: f32) {
+        self.rotation_angle_degrees += rotation * TIME_STEP * BASE_SPEED;
         self.correct_angle();
     }
 

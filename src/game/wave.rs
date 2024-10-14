@@ -7,7 +7,7 @@ use super::meteor::{self, MeteorDefinition};
 extern crate yaml_rust2;
 
 static mut WAVE_COUNT: AtomicUsize = AtomicUsize::new(1);
-const WAVE_DATA: &str = "../../resources/waves.yml";
+const WAVE_DATA: &str = "resources/waves.yml";
 
 
 #[derive(Debug, Resource)]
