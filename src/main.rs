@@ -52,7 +52,7 @@ fn main() {
 			// FrameTimeDiagnosticsPlugin,
 		))
 		// .add_plugins(RapierDebugRenderPlugin::default())
-		// .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+		.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
 		// .add_plugins(InspectableRapierPlugin)
 		// .add_plugin(WorldInspectorPlugin::default())
 		.add_plugins(GamePlugin)

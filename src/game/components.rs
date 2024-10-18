@@ -8,6 +8,51 @@ use rand::{random, Rng};
 
 // region:    --- Common Components
 const MAX_VELOCITY: f32 = 0.5;
+const MAX_ACCELERATION: f32 = 0.5;
+
+#[derive(Component)]
+pub struct Acceleration{
+    pub acceleration: f32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Default for Acceleration {
+    fn default() -> Self {
+        Self { acceleration: 0., x: 0., y: 0. }
+    }
+}
+
+impl Acceleration {
+    pub fn accelerate(&mut self) {
+        self.acceleration += if self.acceleration < MAX_ACCELERATION { 0.001 } else { 0. };
+    }
+
+    pub fn stop(&mut self) {
+        self.acceleration = 0.;
+    }
+
+    pub fn calculate_translation(&mut self, rotation_angle_degrees: &f32) {
+        let angle_radians = rotation_angle_degrees.to_radians();
+        self.x += angle_radians.sin() * self.acceleration * -1.;
+        self.y += angle_radians.cos() * self.acceleration;
+
+        self.correct_max_velocity();
+    }
+        
+    fn correct_max_velocity(&mut self) {
+        if self.x > MAX_VELOCITY {
+            self.x = MAX_VELOCITY;
+        } else if self.x < -MAX_VELOCITY {
+            self.x = -MAX_VELOCITY;
+        }
+        if self.y > MAX_VELOCITY {
+            self.y = MAX_VELOCITY;
+        } else if self.y < -MAX_VELOCITY {
+            self.y = -MAX_VELOCITY;
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct Velocity {

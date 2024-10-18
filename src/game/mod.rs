@@ -69,7 +69,7 @@ impl Plugin for GamePlugin {
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (movable_system, check_life_time_system));
+		.add_systems(Update, (movable_system, correction_screen_overflow_system, check_life_time_system));
     }
 }
 
@@ -119,7 +119,7 @@ fn movable_system(win_size: Res<WinSize>, mut query: Query<(&Velocity, &mut Tran
 		let translation = &mut transform.translation;
 		translation.x += velocity.x * TIME_STEP * BASE_SPEED;
 		translation.y += velocity.y * TIME_STEP * BASE_SPEED;
-		correction_if_screen_overflow(&win_size, &mut translation.x, &mut translation.y);
+		// correction_if_screen_overflow(&win_size, &mut translation.x, &mut translation.y);
     }
 }
 
@@ -137,6 +137,26 @@ fn correction_if_screen_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y
 	} else if *y < -height - MARGIN {
 		*y = height;
 	}
+}
+
+fn correction_screen_overflow_system(win_size: Res<WinSize>, mut query: Query<&mut Transform>) {
+    for mut transform in query.iter_mut() {
+        let translation = &mut transform.translation;
+
+        let width = win_size.width / 2.;
+        let height = win_size.height / 2.;
+        
+        if translation.x > width + MARGIN {
+            translation.x = -width;
+        } else if translation.x < -width - MARGIN {
+            translation.x = width;
+        }
+        if translation.y > height + MARGIN {
+            translation.y = -height;
+        } else if translation.y < -height - MARGIN {
+            translation.y = height;
+        }
+    }
 }
 
 fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut LifeTime)>) {
