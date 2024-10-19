@@ -108,11 +108,6 @@ impl Velocity {
     }
 }
 
-#[derive(Component)]
-pub struct Movable {
-    pub auto_despawn: bool,
-}
-
 const MAX_ANGLE_VALUES: (f32, f32) = (0., 360.);
 
 #[derive(Component)]

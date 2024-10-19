@@ -2,7 +2,7 @@ use std::time::Instant;
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_rapier2d::{na::Translation, prelude::{Collider, KinematicCharacterController, RigidBody}};
 use rand::{random, Rng};
-use super::{components::{Acceleration, Direction, Laser, LifeTime, Movable, Player, RocketDragTimer, RocketFire, SpriteSize, Velocity}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire, SpriteSize, Velocity}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 
 // region:    --- Constants
@@ -55,7 +55,6 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
         .insert(Player)
         .insert(Acceleration::default())
         .insert(Collider::cuboid(PLAYER_SIZE.0 / 2., PLAYER_SIZE.1 / 2.))
-        // .insert(SpriteSize::from(PLAYER_SIZE))
         .insert(Direction::default());
 }
 
@@ -138,7 +137,6 @@ fn propulsion_effect_system(
                     ..default()
                 })
                 .insert(Velocity::with_direction(0.25, direction.rotation_angle_degrees + 180. + random_angle))
-                .insert(Movable { auto_despawn: true })
                 .insert(rocket_drag_timer)
                 .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
         }
@@ -182,7 +180,6 @@ fn player_shooting_system(
                 .insert(Laser)
                 .insert(SpriteSize::from(LASER_SIZE))
                 .insert(Velocity::with_direction(1., rotation.rotation_angle_degrees))
-                .insert(Movable { auto_despawn: true })
                 .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));
         }
     }
