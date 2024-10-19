@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use bevy::prelude::Resource;
+use bevy::{math::Vec2, prelude::Resource};
 use yaml_rust2::{Yaml, YamlLoader};
 
 use super::meteor::{self, MeteorDefinition};
@@ -50,7 +50,7 @@ impl Wave {
         
         for meteor in yaml[index]["meteors"].clone() {
             meteors_definition.push(MeteorDefinition {
-                weight: meteor["weight"].as_i64().unwrap() as i32,
+                weight: meteor["weight"].as_f64().unwrap() as f32,
                 speed: [
                     meteor["speed"][0].as_f64().unwrap() as f32,
                     meteor["speed"][1].as_f64().unwrap() as f32,

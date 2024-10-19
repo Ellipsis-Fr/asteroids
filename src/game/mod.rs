@@ -7,7 +7,8 @@ mod wave;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Movable, Player, RocketDragTimer, Direction, SpriteSize, Velocity};
+use bevy_rapier2d::{plugin::RapierConfiguration, prelude::RigidBody};
+use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Player, RocketDragTimer, Direction, SpriteSize, Velocity};
 use player::PlayerPlugin;
 use meteor::MeteorPlugin;
 use wave::Wave;
@@ -69,7 +70,7 @@ impl Plugin for GamePlugin {
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (movable_system, check_life_time_system));
+		.add_systems(Update, (movable_system, correction_screen_overflow_system, check_life_time_system));
     }
 }
 
@@ -77,6 +78,7 @@ fn setup_system(
 	mut commands: Commands,
 	asset_server: Res<AssetServer>,
 	mut windows:  Query<&mut Window, With<PrimaryWindow>>,
+	mut rapier_configuration: ResMut<RapierConfiguration>
 ) {
 	// camera
 	commands.spawn(Camera2dBundle::default());
@@ -97,6 +99,9 @@ fn setup_system(
 		meteor: asset_server.load(METEOR_SPRITE)
 	 };
 	commands.insert_resource(game_textures);
+
+	// cancel gravity effect
+    rapier_configuration.gravity = Vec2::new(0., 0.);
 }
 
 fn init_wave_system(mut commands: Commands) {
@@ -113,30 +118,32 @@ fn make_visible(mut window: Query<&mut Window>, frames: Res<FrameCount>) {
     }
 }
 
-fn movable_system(win_size: Res<WinSize>, mut query: Query<(&Velocity, &mut Transform, &Movable)>
-) {
-    for (velocity, mut transform, movable) in query.iter_mut() {
+fn movable_system(win_size: Res<WinSize>, mut query: Query<(&Velocity, &mut Transform), Without<RigidBody>>) {
+    for (velocity, mut transform) in query.iter_mut() {
 		let translation = &mut transform.translation;
 		translation.x += velocity.x * TIME_STEP * BASE_SPEED;
 		translation.y += velocity.y * TIME_STEP * BASE_SPEED;
-		correction_if_screen_overflow(&win_size, &mut translation.x, &mut translation.y);
     }
 }
 
-fn correction_if_screen_overflow(win_size: &Res<WinSize>, mut x: &mut f32, mut y: &mut f32) {
-	let width = win_size.width / 2.;
-	let height = win_size.height / 2.;
-	
-	if *x > width + MARGIN {
-		*x = -width;
-	} else if *x < -width - MARGIN {
-		*x = width;
-	}
-	if *y > height + MARGIN {
-		*y = -height;
-	} else if *y < -height - MARGIN {
-		*y = height;
-	}
+fn correction_screen_overflow_system(win_size: Res<WinSize>, mut query: Query<&mut Transform>) {
+    for mut transform in query.iter_mut() {
+        let translation = &mut transform.translation;
+
+        let width = win_size.width / 2.;
+        let height = win_size.height / 2.;
+        
+        if translation.x > width + MARGIN {
+            translation.x = -width;
+        } else if translation.x < -width - MARGIN {
+            translation.x = width;
+        }
+        if translation.y > height + MARGIN {
+            translation.y = -height;
+        } else if translation.y < -height - MARGIN {
+            translation.y = height;
+        }
+    }
 }
 
 fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut LifeTime)>) {

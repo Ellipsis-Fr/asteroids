@@ -1,7 +1,8 @@
 use std::time::Instant;
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy_rapier2d::{na::Translation, prelude::{Collider, KinematicCharacterController, RigidBody}};
 use rand::{random, Rng};
-use super::{GameTextures, PLAYER_SIZE, SPRITE_SCALE, components::{Player, Velocity, Movable, Direction, SpriteSize, Laser, LifeTime, RocketDragTimer, RocketFire}, LASER_SIZE };
+use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire, SpriteSize, Velocity}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 
 // region:    --- Constants
@@ -25,7 +26,9 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update,
         (
                     player_rotation_event_system,
-                    player_velocity_event_system,
+                    player_acceleration_event_system,
+                    move_player_system,
+                    propulsion_effect_system,
                     edit_rocket_drag_system,
                     player_shooting_system,
                     rotate_player_system,
@@ -48,10 +51,10 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
             },
             ..Default::default()
         })
+        .insert(KinematicCharacterController::default())
         .insert(Player)
-        .insert(SpriteSize::from(PLAYER_SIZE))
-        .insert(Velocity::default())
-        .insert(Movable { auto_despawn: false })
+        .insert(Acceleration::default())
+        .insert(Collider::cuboid(PLAYER_SIZE.0 / 2., PLAYER_SIZE.1 / 2.))
         .insert(Direction::default());
 }
 
@@ -66,66 +69,78 @@ fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<
     }    
 }
 
-fn player_velocity_event_system(
+fn player_acceleration_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&Transform, &mut Acceleration, &Direction), With<Player>>) {
+    if let Ok((transform, mut acceleration, direction)) = query.get_single_mut() {
+        if kb.pressed(KeyCode::ArrowUp) {
+            acceleration.accelerate();
+            acceleration.calculate_translation(&direction.rotation_angle_degrees);
+        } else {
+            acceleration.stop();
+        }
+    }    
+}
+
+fn move_player_system(mut query: Query<(&mut KinematicCharacterController, &Acceleration), With<Player>>) {
+    if let Ok((mut controller, acceleration)) = query.get_single_mut() {
+        let mut translation = &mut controller.translation.unwrap_or_default();
+        translation.x += acceleration.x * TIME_STEP * BASE_SPEED;
+        translation.y += acceleration.y * TIME_STEP * BASE_SPEED;
+        controller.translation = Some(*translation);
+    }
+}
+fn propulsion_effect_system(
     mut commands: Commands,
-    kb: Res<ButtonInput<KeyCode>>,
     game_textures: Res<GameTextures>,
-    mut query: Query<(&Transform, &mut Velocity, &mut Direction), With<Player>>,
+    query: Query<(&Transform, &Acceleration, &Direction), With<Player>>, // normalement accelation ne sera plus utile, un run_if vérifiera qu'il y a eu ou non acceleration
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    if let Ok((transform, mut velocity, mut rotation)) = query.get_single_mut() {
-        if kb.pressed(KeyCode::ArrowUp) {
-            velocity.accelerate();
-            velocity.calculate_translation(&rotation.rotation_angle_degrees);
+    if let Ok((transform, acceleration, direction)) = query.get_single() {
+        if acceleration.acceleration == 0. {
+            return;
+        }
+        let y_offset = PLAYER_SIZE.0 / 2. * SPRITE_SCALE * -1. + 10.;
+        let rocket_fire_translation = calculate_shifted_translation(&transform.translation, direction.rotation_angle_degrees, y_offset);
 
-            let y_offset = PLAYER_SIZE.0 / 2. * SPRITE_SCALE * -1. + 10.;
-            let rocket_fire_translation = calculate_shifted_translation(&transform.translation, rotation.rotation_angle_degrees, y_offset);
-
-            // Inserer image de feu et drag
+        // Inserer image de feu et drag
+        commands
+            .spawn(SpriteBundle {
+                texture: game_textures.rocket_fire.clone(),
+                sprite: Sprite {
+                    ..Default::default()
+                },
+                transform: Transform {
+                    translation: rocket_fire_translation,
+                    scale: Vec3::new(0.01, 0.01, 1.),
+                    rotation: Quat::from_rotation_z(direction.rotation_angle_degrees.to_radians())
+                },
+                ..Default::default()
+            })
+            .insert(RocketFire)
+            .insert(LifeTime(Timer::from_seconds(0.05, TimerMode::Once)));
+        
+        
+        if rand::thread_rng().gen::<f32>() > 0.75 {
+            let rocket_drag_timer = RocketDragTimer::new(0.25);
+            let life_time_in_seconds_for_rocket_drag = rocket_drag_timer.2.duration().as_secs_f32();
+            let random_angle = rand::thread_rng().gen_range(-25..=25) as f32;
+            
             commands
-                .spawn(SpriteBundle {
-                    texture: game_textures.rocket_fire.clone(),
-                    sprite: Sprite {
-                        ..Default::default()
-                    },
+                .spawn(MaterialMesh2dBundle {
+                    mesh: meshes.add(Rectangle::new(2., 2.)).into(),
+                    material: materials.add(ColorMaterial::from(Color::xyz(1., 0., 0.))),
                     transform: Transform {
                         translation: rocket_fire_translation,
-                        scale: Vec3::new(0.01, 0.01, 1.),
-                        rotation: Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians())
+                        scale: Vec3::new(1., 1., 1.),
+                        ..Default::default()
                     },
-                    ..Default::default()
+                    ..default()
                 })
-                .insert(RocketFire)
-                .insert(LifeTime(Timer::from_seconds(0.05, TimerMode::Once)));
-            
-            
-            if rand::thread_rng().gen::<f32>() > 0.75 {
-                let rocket_drag_timer = RocketDragTimer::new(0.25);
-                let life_time_in_seconds_for_rocket_drag = rocket_drag_timer.2.duration().as_secs_f32();
-                let random_angle = rand::thread_rng().gen_range(-25..=25) as f32;
-                
-                commands
-                    .spawn(MaterialMesh2dBundle {
-                        mesh: meshes.add(Rectangle::new(2., 2.)).into(),
-                        material: materials.add(ColorMaterial::from(Color::xyz(1., 0., 0.))),
-                        transform: Transform {
-                            translation: rocket_fire_translation,
-                            scale: Vec3::new(1., 1., 1.),
-                            ..Default::default()
-                        },
-                        ..default()
-                    })
-                    .insert(Velocity::with_direction(0.25, rotation.rotation_angle_degrees + 180. + random_angle))
-                    .insert(Movable { auto_despawn: true })
-                    .insert(rocket_drag_timer)
-                    .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
-            }
-
-        } else {
-            velocity.stop();
+                .insert(Velocity::with_direction(0.25, direction.rotation_angle_degrees + 180. + random_angle))
+                .insert(rocket_drag_timer)
+                .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
         }
-    }    
+    }
 }
 
 fn player_shooting_system(
@@ -165,7 +180,6 @@ fn player_shooting_system(
                 .insert(Laser)
                 .insert(SpriteSize::from(LASER_SIZE))
                 .insert(Velocity::with_direction(1., rotation.rotation_angle_degrees))
-                .insert(Movable { auto_despawn: true })
                 .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));
         }
     }
@@ -177,7 +191,7 @@ fn calculate_shifted_translation(translation_origin: &Vec3, angle: f32, shift: f
     let x = angle_radians.sin() * shift * -1.;
     let y = angle_radians.cos() * shift;
 
-    Vec3 { x: translation_origin.x + x, y: translation_origin.y + y, z: translation_origin.z }
+    Vec3 { x: translation_origin.x + x, y: translation_origin.y + y, z: 0. }
 }
 
 fn rotate_player_system(mut query: Query<(&mut Transform, &Direction), With<Player>>) {
