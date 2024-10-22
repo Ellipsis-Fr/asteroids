@@ -3,7 +3,7 @@ My Rust creation of the game "Asteroids"
 
 # TODO
 - [x] Add the rotation of the player
-- [x] Add the movement of the player
+- [x] Add the movement of the player <--- Correction needed due to ship offset
 - [x] Add the acceleration visual of the player
 - [ ] Add the collision of the player
 - [ ] Add the spawn of the asteroids
@@ -12,6 +12,7 @@ My Rust creation of the game "Asteroids"
 - [x] Add the spawn of the bullets
 - [x] Add the movement of the bullets
 - [ ] Add the collision of the bullets
+- [x] Integrate a physics engine
 
 
 ## In Progress

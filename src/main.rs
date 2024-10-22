@@ -51,10 +51,10 @@ fn main() {
 			// LogDiagnosticsPlugin::default(),
 			// FrameTimeDiagnosticsPlugin,
 		))
-		.add_plugins(RapierDebugRenderPlugin::default())
+		// .add_plugins(RapierDebugRenderPlugin::default())
 		.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
 		// .add_plugins(InspectableRapierPlugin)
-		.add_plugins(WorldInspectorPlugin::default())
+		// .add_plugins(WorldInspectorPlugin::default())
 		.add_plugins(GamePlugin)
 		.run();
 }

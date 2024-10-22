@@ -1,8 +1,8 @@
-use std::time::Instant;
+use std::{f32::consts::PI, time::Instant};
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
-use bevy_rapier2d::{na::Translation, prelude::{Collider, KinematicCharacterController, RigidBody}};
+use bevy_rapier2d::{na::Translation, prelude::{Collider, KinematicCharacterController, RigidBody, Velocity}};
 use rand::{random, Rng};
-use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire, SpriteSize, Velocity}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 
 // region:    --- Constants
@@ -100,7 +100,11 @@ fn propulsion_effect_system(
             return;
         }
         let y_offset = PLAYER_SIZE.0 / 2. * SPRITE_SCALE * -1. + 10.;
-        let rocket_fire_translation = calculate_shifted_translation(&transform.translation, direction.rotation_angle_degrees, y_offset);
+        let rocket_fire_translation = calculate_translation(
+            Vec2::new(transform.translation.x, transform.translation.y),
+            direction.rotation_angle_degrees.to_radians(),
+            y_offset
+        ).extend(0.);
 
         // Inserer image de feu et drag
         commands
@@ -124,6 +128,7 @@ fn propulsion_effect_system(
             let rocket_drag_timer = RocketDragTimer::new(0.25);
             let life_time_in_seconds_for_rocket_drag = rocket_drag_timer.2.duration().as_secs_f32();
             let random_angle = rand::thread_rng().gen_range(-25..=25) as f32;
+            let random_angvel = rand::thread_rng().gen_range((0.)..PI);
             
             commands
                 .spawn(MaterialMesh2dBundle {
@@ -136,7 +141,8 @@ fn propulsion_effect_system(
                     },
                     ..default()
                 })
-                .insert(Velocity::with_direction(0.25, direction.rotation_angle_degrees + 180. + random_angle))
+                .insert(RigidBody::KinematicVelocityBased)
+                .insert(Velocity { linvel: calculate_velocity(Vec2::ZERO, (direction.rotation_angle_degrees + 180. + random_angle).to_radians(), 100.), angvel: random_angvel })
                 .insert(rocket_drag_timer)
                 .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
         }
@@ -148,9 +154,9 @@ fn player_shooting_system(
     time_since_last_shot: Option<ResMut<TimeSinceLastShot>>,
     game_textures: Res<GameTextures>,
     kb: Res<ButtonInput<KeyCode>>,
-    query: Query<(&Transform, &mut Direction), With<Player>>
+    query: Query<(&Transform, &Acceleration, &Direction), With<Player>>
 ) {
-    if let Ok((transform, mut rotation)) = query.get_single() {
+    if let Ok((transform, acceleration, direction)) = query.get_single() {
         if kb.just_pressed(KeyCode::Space) {
             if let Some(mut time_since_last_shot) = time_since_last_shot {
                 if time_since_last_shot.time.elapsed().as_secs_f32() < LASER_COOLDOWN {
@@ -162,8 +168,12 @@ fn player_shooting_system(
             }
 
             let y_offset = PLAYER_SIZE.0 / 2. * SPRITE_SCALE;
-            let laser_translation = calculate_shifted_translation(&transform.translation, rotation.rotation_angle_degrees, y_offset);
-
+            let laser_translation = calculate_translation(
+                Vec2::new(transform.translation.x, transform.translation.y),
+                direction.rotation_angle_degrees.to_radians(),
+                y_offset
+            ).extend(0.);
+            
             commands
                 .spawn(SpriteBundle {
                     texture: game_textures.laser.clone(),
@@ -173,25 +183,39 @@ fn player_shooting_system(
                     transform: Transform {
                         translation: laser_translation,
                         scale: Vec3::new(SPRITE_SCALE, SPRITE_SCALE, 1.),
-                        rotation: Quat::from_rotation_z(rotation.rotation_angle_degrees.to_radians())
+                        rotation: Quat::from_rotation_z(direction.rotation_angle_degrees.to_radians())
                     },
                     ..Default::default()
                 })
                 .insert(Laser)
-                .insert(SpriteSize::from(LASER_SIZE))
-                .insert(Velocity::with_direction(1., rotation.rotation_angle_degrees))
+                .insert(RigidBody::KinematicVelocityBased)
+                .insert(Collider::capsule(Vec2 { x: 0., y: 0. }, Vec2 { x: 0., y: LASER_SIZE.1 / 2. }, LASER_SIZE.0 / 2.))
+                .insert(Velocity::linear(calculate_velocity(Vec2::new(acceleration.x, acceleration.y), direction.rotation_angle_degrees.to_radians(), 500.)))
                 .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));
         }
     }
 }
 
-fn calculate_shifted_translation(translation_origin: &Vec3, angle: f32, shift: f32) -> Vec3 {
-    let angle_radians = angle.to_radians();
+fn calculate_translation(mut vec2: Vec2, angle_radians: f32, shift: f32) -> Vec2 {
+    vec2.x += angle_radians.sin() * shift * -1.;
+    vec2.y += angle_radians.cos() * shift;
 
-    let x = angle_radians.sin() * shift * -1.;
-    let y = angle_radians.cos() * shift;
+    vec2
+}
 
-    Vec3 { x: translation_origin.x + x, y: translation_origin.y + y, z: 0. }
+fn calculate_velocity(vec2: Vec2, angle_radians: f32, boost: f32) -> Vec2 {
+    let Vec2 { mut x, mut y } = calculate_translation(Vec2::ZERO, angle_radians, boost);
+
+    let extra_speed = |m: &mut f32, n: f32| {
+        if (*m < 0. && n < 0.) || (*m > 0. && n > 0.) {
+            *m += n * TIME_STEP * BASE_SPEED;
+        }
+    };
+
+    extra_speed(&mut x, vec2.x);
+    extra_speed(&mut y, vec2.y);
+    
+    Vec2 { x, y }
 }
 
 fn rotate_player_system(mut query: Query<(&mut Transform, &Direction), With<Player>>) {

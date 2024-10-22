@@ -4,7 +4,7 @@ use bevy::{log::tracing_subscriber::field::debug, prelude::*};
 use bevy_rapier2d::{parry::simba::scalar::SupersetOf, prelude::{Collider, ColliderMassProperties, Restitution, RigidBody, Sleeping, Velocity}};
 use rand::Rng;
 
-use super::{components::{Direction, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, RocketDragTimer, RocketFire, SpriteSize}, wave::Wave, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Direction, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, RocketDragTimer, RocketFire}, wave::Wave, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 #[derive(Debug)]
 pub struct MeteorDefinition {
@@ -85,7 +85,7 @@ fn get_meteor_definition_mapped(win_size: &Res<WinSize>, meteor_definition: Mete
             y: rand::thread_rng().gen_range((meteor_definition.speed[0] * TIME_STEP * BASE_SPEED)..=((meteor_definition.speed[1] * TIME_STEP * BASE_SPEED))) * rand::thread_rng().gen_range(-1.0..=1.0)
         },
         angvel: rand::thread_rng().gen_range((0.)..TAU),
-        restitution_coefficient: 0.9,
+        restitution_coefficient: 1.,
         kind: meteor_definition.kind,
         level: meteor_definition.level
     }
