@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, time::Instant};
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
-use bevy_rapier2d::{na::Translation, prelude::{Collider, KinematicCharacterController, RigidBody, Velocity}};
+use bevy_rapier2d::{na::Translation, prelude::{ActiveEvents, Collider, CollisionGroups, Group, KinematicCharacterController, RigidBody, Sensor, Velocity}};
 use rand::{random, Rng};
 use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire}, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
@@ -58,13 +58,14 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
         .insert(Direction::default());
 }
 
-fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Direction, With<Player>>) {
-    if let Ok(mut rotation) = query.get_single_mut() {
+fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&mut Acceleration, &mut Direction), With<Player>>) {
+    if let Ok((mut acceleration, mut rotation)) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowLeft) {
             rotation.rotate(0.5);
+            acceleration.stop();
         } else if kb.pressed(KeyCode::ArrowRight) {
             rotation.rotate(-0.5);
-            
+            acceleration.stop();
         }
     }    
 }
@@ -190,6 +191,7 @@ fn player_shooting_system(
                 .insert(Laser)
                 .insert(RigidBody::KinematicVelocityBased)
                 .insert(Collider::capsule(Vec2 { x: 0., y: 0. }, Vec2 { x: 0., y: LASER_SIZE.1 / 2. }, LASER_SIZE.0 / 2.))
+                .insert(ActiveEvents::COLLISION_EVENTS)
                 .insert(Velocity::linear(calculate_velocity(Vec2::new(acceleration.x, acceleration.y), direction.rotation_angle_degrees.to_radians(), 500.)))
                 .insert(LifeTime(Timer::from_seconds(1., TimerMode::Once)));
         }

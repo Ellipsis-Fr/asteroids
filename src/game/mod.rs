@@ -6,11 +6,11 @@ mod wave;
 
 use std::collections::HashSet;
 
-use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use bevy_rapier2d::{plugin::RapierConfiguration, prelude::RigidBody};
-use components::{Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Player, RocketDragTimer, Direction};
+use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
+use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, RigidBody, Velocity }};
+use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
 use player::PlayerPlugin;
-use meteor::MeteorPlugin;
+use meteor::{MeteorDefinition, MeteorPlugin};
 use wave::Wave;
 
 
@@ -58,6 +58,12 @@ struct GameTextures {
 	meteor: Handle<Image>,
 }
 
+#[derive(Resource)]
+struct DestroyedMeteors(pub Vec<(MeteorDefinition, Vec3)>);
+
+#[derive(Resource)]
+struct Fragments(pub Vec<Vec3>);
+
 // endregion:  --- Resources
 
 pub struct GamePlugin;
@@ -65,12 +71,13 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
+		.register_type::<MeteorLevel>()
         .add_plugins(PlayerPlugin)
         .add_plugins(MeteorPlugin)
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system));
+		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system));
     }
 }
 
@@ -99,6 +106,9 @@ fn setup_system(
 		meteor: asset_server.load(METEOR_SPRITE)
 	 };
 	commands.insert_resource(game_textures);
+
+	commands.insert_resource(DestroyedMeteors(Vec::new()));
+	commands.insert_resource(Fragments(Vec::new()));
 
 	// cancel gravity effect
     rapier_configuration.gravity = Vec2::new(0., 0.);
@@ -144,4 +154,75 @@ fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Qu
 			commands.entity(entity).despawn();
 		}
     }
+}
+
+fn handle_fire_events_system(
+	mut commands: Commands,
+	mut fragments: ResMut<Fragments>,
+	mut destroyed_meteors: ResMut<DestroyedMeteors>,
+	mut collision_events: EventReader<CollisionEvent>,
+	query_meteor: Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_laser: Query<Entity, With<Laser>>
+) {
+    let mut entities_whose_collision_event_is_processed = HashSet::new();
+
+	'outer: for collision_event in collision_events.read() {
+		
+		let (entity_a, entity_b) = match get_entities_touched(collision_event, &mut entities_whose_collision_event_is_processed) {
+			None => continue,
+			Some((entity_a, entity_b)) => (entity_a, entity_b)
+		};
+
+		
+		for (entity_meteor, meteor_level, mass, velocity, transform) in &query_meteor {
+			if entity_meteor == entity_a || entity_meteor == entity_b {
+				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, velocity, transform);
+				commands.entity(entity_a).despawn();
+				commands.entity(entity_b).despawn();
+				break 'outer;
+			}
+		}
+    }
+}
+
+fn get_entities_touched(collision_event: &CollisionEvent, entities_whose_collision_event_is_processed: &mut HashSet<Entity>) -> Option<(Entity, Entity)> {
+	if let CollisionEvent::Started(entity_a, entity_b, _) = collision_event {
+		if entities_whose_collision_event_is_processed.contains(entity_a) || entities_whose_collision_event_is_processed.contains(entity_b) {
+			None
+		} else {
+			entities_whose_collision_event_is_processed.insert(entity_a.clone());
+			entities_whose_collision_event_is_processed.insert(entity_b.clone());
+			Some((entity_a.clone(), entity_b.clone()))
+		}
+	} else {
+		None
+	}
+}
+
+fn handle_entity_destruction(
+	mut fragments: &mut ResMut<Fragments>,
+	mut destroyed_meteors: &mut ResMut<DestroyedMeteors>,
+	meteor_level: &MeteorLevel,
+	mass: &ColliderMassProperties,
+	velocity: &Velocity,
+	transform: &Transform
+) {
+	let entity_translation = transform.translation; 
+	
+	fragments.0.push(entity_translation.clone());
+	dbg!(meteor_level.0);
+	if meteor_level.0 < 3 {
+		destroyed_meteors.0.push((
+			MeteorDefinition {
+				weight: match mass {
+						ColliderMassProperties::Mass(value) => *value,
+						_ => panic!()
+					},
+				speed: [velocity.linvel.x, velocity.linvel.y],
+				kind: 0,
+				level: meteor_level.0
+			},
+			entity_translation.clone()
+		));
+	}
 }

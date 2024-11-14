@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::{prelude::{Component, Vec2, Vec3}, time::{Timer, TimerMode}};
+use bevy::{prelude::{Component, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
 
 use crate::game::{BASE_SPEED, TIME_STEP};
 
@@ -158,9 +158,7 @@ pub struct LifeTime(pub Timer);
 
 // region:    --- Meteor Component
 #[derive(Component)]
-pub struct Meteor {
-    pub rotation_speed: f32 // in radians per second
-}
+pub struct Meteor;
 
 #[derive(Component)]
 pub struct Weight(i32);
@@ -168,8 +166,8 @@ pub struct Weight(i32);
 #[derive(Component)]
 pub struct MeteorType(u8);
 
-#[derive(Component)]
-pub struct MeteorLevel(u8);
+#[derive(Component, Reflect)]
+pub struct MeteorLevel(pub u8);
 
 #[derive(Component)]
 pub struct MeteorState(u8);

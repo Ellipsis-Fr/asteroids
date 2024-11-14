@@ -8,21 +8,6 @@ use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 
-
-// TODO : - Intégration Vaisseau (prise en compte de la forme, définition taille)
-// ! Ne sais pas faire précédent point, nécessite de se former sur les shaders et meshs
-
-// TODO : - Gestion du visuel d'accélération
-
-// TODO : - Téléportation Vaisseau (trouver une zone sur la map où aucun danger n'est présent)
-
-// TODO : - Astéroïdes (Intégtation, division, dplct)
-
-// TODO : - Vaisseau Enemie
-
-// TODO : - Scores
-
-
 fn main() {
     App::new()
 		.add_plugins((
@@ -51,10 +36,10 @@ fn main() {
 			// LogDiagnosticsPlugin::default(),
 			// FrameTimeDiagnosticsPlugin,
 		))
-		// .add_plugins(RapierDebugRenderPlugin::default())
+		.add_plugins(RapierDebugRenderPlugin::default())
 		.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
 		// .add_plugins(InspectableRapierPlugin)
-		// .add_plugins(WorldInspectorPlugin::default())
+		.add_plugins(WorldInspectorPlugin::default())
 		.add_plugins(GamePlugin)
 		.run();
 }
