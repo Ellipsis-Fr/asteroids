@@ -8,6 +8,8 @@ use crate::game::meteor;
 
 use super::{components::{Direction, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, RocketDragTimer, RocketFire}, wave::Wave, DestroyedMeteors, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
+const CHILDREN_METEORS_COUNTER: i32 = 2;
+
 #[derive(Debug)]
 pub struct MeteorDefinition {
     pub weight: f32,
@@ -116,36 +118,40 @@ fn spawn_meteor(commands: &mut Commands, game_textures: &Res<GameTextures>, mete
 }
 
 fn get_meteors(translation: Vec3, meteor_definition: MeteorDefinition) -> Vec<MeteorMapper> {
-    let (meteors_to_spawn_counter, angle_offset_w_current_direction, angle_offset_btw_new_directions) = if meteor_definition.level == 1 {
-        (2, 90f32.to_radians(), 180f32.to_radians())
-    } else {
-        (4, 45f32.to_radians(), 90f32.to_radians())
-    };
-
     let mut meteors = Vec::new();
 
-	dbg!("Initial Meteor", &meteor_definition);
-
-
-    for count in 0..meteors_to_spawn_counter {
-        let mut new_direction = Vec2::from_array(meteor_definition.speed);
-        new_direction.x = (new_direction.x - translation.x) * (angle_offset_w_current_direction + angle_offset_btw_new_directions * count as f32).cos() - (new_direction.y - translation.y) * (angle_offset_w_current_direction + angle_offset_btw_new_directions * count as f32).sin() + new_direction.x;
-        new_direction.y = (new_direction.x - translation.x) * (angle_offset_w_current_direction + angle_offset_btw_new_directions * count as f32).sin() - (new_direction.y - translation.y) * (angle_offset_w_current_direction + angle_offset_btw_new_directions * count as f32).cos() + new_direction.y;
+    for count in 0..CHILDREN_METEORS_COUNTER {
+        let new_direction = get_new_meteor_direction(&translation, &meteor_definition.speed, count as f32);
+        
+        let init_position = get_init_position(&translation, new_direction.clone().extend(0.));
 
         let meteor_mapper = MeteorMapper { 
-            init_position: translation.clone(),
+            init_position,
             weight: meteor_definition.weight / 2.,
-            linvel: new_direction * 0.75,
+            linvel: new_direction * 0.5,
             angvel: rand::thread_rng().gen_range((0.)..PI),
             restitution_coefficient: 1.,
             kind: meteor_definition.kind,
             level: meteor_definition.level + 1
         };
 
-        dbg!("New Meteor", &meteor_mapper);
-        
         meteors.push(meteor_mapper);
     }
 
     meteors
+}
+
+fn get_new_meteor_direction(translation: &Vec3, actual_meteor_direction: &[f32; 2], count: f32) -> Vec2 {
+    const ANGLE_OFFSET_W_CURRENT_DIRECTION: f32 = PI / 2.0;
+    const ANGLE_OFFSET_BTW_NEW_DIRECTIONS: f32 = PI;
+
+    let mut new_direction = Vec2::from_array(*actual_meteor_direction);
+    new_direction.x = (new_direction.x - translation.x) * (ANGLE_OFFSET_W_CURRENT_DIRECTION + ANGLE_OFFSET_BTW_NEW_DIRECTIONS * count).cos() - (new_direction.y - translation.y) * (ANGLE_OFFSET_W_CURRENT_DIRECTION + ANGLE_OFFSET_BTW_NEW_DIRECTIONS * count).sin() + new_direction.x;
+    new_direction.y = (new_direction.x - translation.x) * (ANGLE_OFFSET_W_CURRENT_DIRECTION + ANGLE_OFFSET_BTW_NEW_DIRECTIONS * count).sin() - (new_direction.y - translation.y) * (ANGLE_OFFSET_W_CURRENT_DIRECTION + ANGLE_OFFSET_BTW_NEW_DIRECTIONS * count).cos() + new_direction.y;
+
+    new_direction
+}
+
+fn get_init_position(translation: &Vec3, new_direction: Vec3) -> Vec3 {
+    translation.clone() + (new_direction.normalize() * Vec3 { x: 10., y: 10., z: 1. })
 }

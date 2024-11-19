@@ -162,7 +162,7 @@ fn handle_fire_events_system(
 	mut destroyed_meteors: ResMut<DestroyedMeteors>,
 	mut collision_events: EventReader<CollisionEvent>,
 	query_meteor: Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
-	query_laser: Query<Entity, With<Laser>>
+	query_laser: Query<(Entity, &Velocity), With<Laser>>
 ) {
     let mut entities_whose_collision_event_is_processed = HashSet::new();
 
@@ -173,16 +173,45 @@ fn handle_fire_events_system(
 			Some((entity_a, entity_b)) => (entity_a, entity_b)
 		};
 
-		
+		let mut laser_direction = None;
+		for (entity_laser, velocity) in &query_laser {
+			if entity_laser == entity_a || entity_laser == entity_b {
+				let x = if velocity.linvel.x > 0. { 1. } else { -1. };
+				let y = if velocity.linvel.y > 0. { 1. } else { -1. };
+				laser_direction = Some(Vec2 {x, y});
+			}
+		}
+
 		for (entity_meteor, meteor_level, mass, velocity, transform) in &query_meteor {
 			if entity_meteor == entity_a || entity_meteor == entity_b {
-				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, velocity, transform);
+				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction.unwrap());
+				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
 				commands.entity(entity_a).despawn();
 				commands.entity(entity_b).despawn();
 				break 'outer;
 			}
 		}
     }
+}
+
+fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -> Vec2 {
+	let direction = |meteor_direction, laser_direction| -> f32 {
+		if meteor_direction > 0. {
+			if laser_direction > 0. {
+				meteor_direction
+			} else {
+				meteor_direction * -1.
+			}
+		} else {
+			if laser_direction > 0. {
+				meteor_direction * -1.
+			} else {
+				meteor_direction
+			}
+		}
+	};
+
+	Vec2 { x: direction(velocity.linvel.x, laser_direction.x), y: direction(velocity.linvel.y, laser_direction.y) }
 }
 
 fn get_entities_touched(collision_event: &CollisionEvent, entities_whose_collision_event_is_processed: &mut HashSet<Entity>) -> Option<(Entity, Entity)> {
@@ -204,13 +233,13 @@ fn handle_entity_destruction(
 	mut destroyed_meteors: &mut ResMut<DestroyedMeteors>,
 	meteor_level: &MeteorLevel,
 	mass: &ColliderMassProperties,
-	velocity: &Velocity,
+	velocity: Vec2,
 	transform: &Transform
 ) {
 	let entity_translation = transform.translation; 
 	
 	fragments.0.push(entity_translation.clone());
-	dbg!(meteor_level.0);
+
 	if meteor_level.0 < 3 {
 		destroyed_meteors.0.push((
 			MeteorDefinition {
@@ -218,7 +247,7 @@ fn handle_entity_destruction(
 						ColliderMassProperties::Mass(value) => *value,
 						_ => panic!()
 					},
-				speed: [velocity.linvel.x, velocity.linvel.y],
+				speed: [velocity.x, velocity.y],
 				kind: 0,
 				level: meteor_level.0
 			},
