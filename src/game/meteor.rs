@@ -8,8 +8,6 @@ use crate::game::meteor;
 
 use super::{components::{Direction, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, RocketDragTimer, RocketFire}, wave::Wave, DestroyedMeteors, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
-const CHILDREN_METEORS_COUNTER: i32 = 2;
-
 #[derive(Debug)]
 pub struct MeteorDefinition {
     pub weight: f32,
@@ -35,7 +33,8 @@ impl Plugin for MeteorPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (
             meteor_spawn_system.run_if(enough_meteors_to_spawn),
-            child_meteor_spawn_system.run_if(meteors_destroyed)
+            child_meteor_spawn_system.run_if(meteors_destroyed),
+            adjust_meteor_speed_system
         ));
     }
 }
@@ -118,6 +117,7 @@ fn spawn_meteor(commands: &mut Commands, game_textures: &Res<GameTextures>, mete
 }
 
 fn get_meteors(translation: Vec3, meteor_definition: MeteorDefinition) -> Vec<MeteorMapper> {
+    const CHILDREN_METEORS_COUNTER: i32 = 2;
     let mut meteors = Vec::new();
 
     for count in 0..CHILDREN_METEORS_COUNTER {
@@ -128,7 +128,7 @@ fn get_meteors(translation: Vec3, meteor_definition: MeteorDefinition) -> Vec<Me
         let meteor_mapper = MeteorMapper { 
             init_position,
             weight: meteor_definition.weight / 2.,
-            linvel: new_direction * 0.5,
+            linvel: get_minimum_speed_value(&(new_direction * 0.75)),
             angvel: rand::thread_rng().gen_range((0.)..PI),
             restitution_coefficient: 1.,
             kind: meteor_definition.kind,
@@ -154,4 +154,22 @@ fn get_new_meteor_direction(translation: &Vec3, actual_meteor_direction: &[f32; 
 
 fn get_init_position(translation: &Vec3, new_direction: Vec3) -> Vec3 {
     translation.clone() + (new_direction.normalize() * Vec3 { x: 10., y: 10., z: 1. })
+}
+
+fn adjust_meteor_speed_system(mut query_meteor: Query<&mut Velocity, With<Meteor>>) {
+    for mut velocity in query_meteor.iter_mut() {
+        velocity.linvel = get_minimum_speed_value(&velocity.linvel);
+    }
+}
+
+fn get_minimum_speed_value(speed: &Vec2) -> Vec2 {
+    const SPEED_MIN: f32 = 215.;
+
+    if SPEED_MIN <= speed.length() {
+        speed.clone()
+    } else {
+        let direction = speed.normalize_or_zero();
+        direction * SPEED_MIN
+    }
+
 }
