@@ -1,12 +1,18 @@
 use std::f32::consts::PI;
 
-use bevy::{prelude::{Component, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
+use bevy::{prelude::{Component, Entity, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
 
 use crate::game::{BASE_SPEED, TIME_STEP};
 
 use rand::{random, Rng};
 
 // region:    --- Common Components
+#[derive(Component)]
+pub struct Fake;
+
+#[derive(Component)]
+pub struct FakeEntities(Vec<Entity>);
+
 const MAX_ACCELERATION: f32 = 0.5;
 
 #[derive(Component)]
