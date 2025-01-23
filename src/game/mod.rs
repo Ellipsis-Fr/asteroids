@@ -5,6 +5,7 @@ mod tech_details;
 mod components;
 mod wave;
 
+use std::env;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
@@ -87,7 +88,7 @@ impl Plugin for GamePlugin {
 		.register_type::<MeteorLevel>()
         .add_plugins(PlayerPlugin)
         .add_plugins(MeteorPlugin)
-		.add_plugins(TechDetailsPlugin)
+		.add_plugins(TechDetailsPlugin(env::var("ACTIVE_TECH_DETAIL").unwrap_or("false".to_string()) == "true"))
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)

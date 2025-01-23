@@ -4,11 +4,13 @@ use bevy::{color::palettes::css::*, prelude::*, window::PrimaryWindow};
 use crate::Plugin;
 use bevy::prelude::Gizmos;
 
-pub struct TechDetailsPlugin;
+pub struct TechDetailsPlugin(pub bool);
 
 impl Plugin for TechDetailsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (draw_grid_system, show_coordinates_system, draw_collider_center));
+		if self.0 {
+			app.add_systems(Update, (draw_grid_system, show_coordinates_system, draw_collider_center));
+		}
     }
 }
 
