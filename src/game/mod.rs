@@ -1,15 +1,18 @@
 #![allow(unused)]
 mod player;
 mod meteor;
+mod tech_details;
 mod components;
 mod wave;
 
+use std::env;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, RigidBody, Velocity }};
 use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
 use player::PlayerPlugin;
+use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
 use wave::Wave;
 
@@ -47,7 +50,18 @@ const ENEMY_MAX: u32 = 2;
 #[derive(Resource)]
 pub struct WinSize {
 	pub width: f32,
-	pub height: f32
+	pub height: f32,
+	pub x_axys_limit: (f32, f32),
+	pub y_axys_limit: (f32, f32),
+}
+
+impl WinSize {
+	fn new(width: f32, height: f32) -> Self {
+		let x_axys_limit = (-1. * width / 2., 1. * width / 2.);
+		let y_axys_limit = (-1. * height / 2., 1. * height / 2.);
+
+		Self { width, height, x_axys_limit, y_axys_limit }
+	}
 }
 
 #[derive(Resource)]
@@ -74,6 +88,7 @@ impl Plugin for GamePlugin {
 		.register_type::<MeteorLevel>()
         .add_plugins(PlayerPlugin)
         .add_plugins(MeteorPlugin)
+		.add_plugins(TechDetailsPlugin(env::var("ACTIVE_TECH_DETAIL").unwrap_or("false".to_string()) == "true"))
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
@@ -95,7 +110,7 @@ fn setup_system(
 	let (win_w, win_h) = (window.width(), window.height());
 
 	// add WinSize resource
-	let win_size = WinSize { width: win_w, height: win_h };
+	let win_size = WinSize::new(win_w, win_h);
 	commands.insert_resource(win_size);
 
 	// add GameTextures resource

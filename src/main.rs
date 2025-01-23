@@ -3,12 +3,16 @@ mod game;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::{plugin::{NoUserData, RapierPhysicsPlugin}, render::RapierDebugRenderPlugin};
 use game::GamePlugin;
+use dotenv::dotenv;
 
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 
 fn main() {
+
+	dotenv().ok();
+
     App::new()
 		.add_plugins((
 			DefaultPlugins.set(WindowPlugin {
@@ -43,4 +47,3 @@ fn main() {
 		.add_plugins(GamePlugin)
 		.run();
 }
-
