@@ -2,7 +2,7 @@ use std::{f32::consts::PI, time::Instant};
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_rapier2d::{na::Translation, prelude::{ActiveEvents, Collider, CollisionGroups, Group, KinematicCharacterController, RigidBody, Sensor, Velocity}};
 use rand::{random, Rng};
-use super::{components::{Acceleration, Direction, Laser, LifeTime, Player, RocketDragTimer, RocketFire}, GameTextures, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Acceleration, Direction, FakeEntities, Laser, LifeTime, Player, RocketDragTimer, RocketFire}, GameTextures, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 
 // region:    --- Constants
@@ -55,7 +55,8 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
         .insert(Player)
         .insert(Acceleration::default())
         .insert(Collider::cuboid(PLAYER_SIZE.0 / 2., PLAYER_SIZE.1 / 2.))
-        .insert(Direction::default());
+        .insert(Direction::default())
+        .insert(FakeEntities(vec![]));
 }
 
 fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&mut Acceleration, &mut Direction), With<Player>>) {

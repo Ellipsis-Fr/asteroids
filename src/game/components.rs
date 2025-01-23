@@ -11,7 +11,7 @@ use rand::{random, Rng};
 pub struct Fake;
 
 #[derive(Component)]
-pub struct FakeEntities(Vec<Entity>);
+pub struct FakeEntities(pub Vec<Entity>);
 
 const MAX_ACCELERATION: f32 = 0.5;
 

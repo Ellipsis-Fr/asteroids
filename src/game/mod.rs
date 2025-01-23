@@ -4,13 +4,14 @@ mod meteor;
 mod tech_details;
 mod components;
 mod wave;
+mod screen_overflow;
 
 use std::env;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, RigidBody, Velocity }};
-use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
+use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, RigidBody, Velocity }};
+use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
 use player::PlayerPlugin;
 use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
@@ -37,8 +38,6 @@ const SPRITE_SCALE: f32 = 0.5;
 // endregion:  --- Asset Constants
 
 // region:    --- Game Constants
-
-const MARGIN: f32 = 100.;
 
 const TIME_STEP: f32 = 1./60.;
 const BASE_SPEED: f32 = 500.;
@@ -92,7 +91,9 @@ impl Plugin for GamePlugin {
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system));
+		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system))
+		.add_systems(Last, remove_fake_entities_system)
+		;
     }
 }
 
@@ -143,23 +144,15 @@ fn make_visible(mut window: Query<&mut Window>, frames: Res<FrameCount>) {
     }
 }
 
-fn correction_screen_overflow_system(win_size: Res<WinSize>, mut query: Query<&mut Transform>) {
-    for mut transform in query.iter_mut() {
-        let translation = &mut transform.translation;
-
-		let new_position = |p: f32, screen_limit: f32| -> f32 {
-			if p > screen_limit {
-				-screen_limit
-			} else if p < -screen_limit {
-				screen_limit
-			} else {
-				p
-			}
-		};
-
-		translation.x = new_position(translation.x, win_size.width / 2. + MARGIN);
-		translation.y = new_position(translation.y, win_size.height / 2. + MARGIN);
-    }
+fn correction_screen_overflow_system(
+	mut commands: Commands,
+	win_size: Res<WinSize>,
+	mut small_movable_entities_query: Query<&mut Transform, (Without<Fake>, Without<FakeEntities>)>,
+	mut large_movable_entities_query: Query<(Entity, &mut Transform, &Collider, &mut FakeEntities), Without<Fake>>,
+	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>
+) {
+    screen_overflow::correction_screen_overflow_small_entities(&win_size, small_movable_entities_query);
+	screen_overflow::correction_screen_overflow_large_entities(commands, win_size, large_movable_entities_query, large_movable_entities_with_velocity_query);
 }
 
 fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut LifeTime)>) {
@@ -268,5 +261,11 @@ fn handle_entity_destruction(
 			},
 			entity_translation.clone()
 		));
+	}
+}
+
+fn remove_fake_entities_system(mut commands: Commands, query_fake_entities: Query<Entity, With<Fake>>) {
+	for entity in query_fake_entities.iter() {
+		commands.entity(entity).despawn();
 	}
 }

@@ -6,7 +6,7 @@ use rand::Rng;
 
 use crate::game::meteor;
 
-use super::{components::{Direction, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, RocketDragTimer, RocketFire}, wave::Wave, DestroyedMeteors, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Direction, FakeEntities, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, RocketDragTimer, RocketFire}, wave::Wave, DestroyedMeteors, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 #[derive(Debug)]
 pub struct MeteorDefinition {
@@ -113,7 +113,8 @@ fn spawn_meteor(commands: &mut Commands, game_textures: &Res<GameTextures>, mete
         })
         .insert(Restitution::coefficient(meteor.restitution_coefficient))
         .insert(ExternalForce::default())
-        .insert(Sleeping::disabled());
+        .insert(Sleeping::disabled())
+        .insert(FakeEntities(vec![]));
 }
 
 fn get_meteors(translation: Vec3, meteor_definition: MeteorDefinition) -> Vec<MeteorMapper> {
