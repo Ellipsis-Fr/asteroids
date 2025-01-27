@@ -92,8 +92,7 @@ impl Plugin for GamePlugin {
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
 		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system))
-		.add_systems(Last, remove_fake_entities_system)
-		;
+		.add_systems(First, remove_fake_entities_system);
     }
 }
 
@@ -149,10 +148,22 @@ fn correction_screen_overflow_system(
 	win_size: Res<WinSize>,
 	mut small_movable_entities_query: Query<&mut Transform, (Without<Fake>, Without<FakeEntities>)>,
 	mut large_movable_entities_query: Query<(Entity, &mut Transform, &Collider, &mut FakeEntities), Without<Fake>>,
-	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>
+	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>,
+	game_textures: Res<GameTextures>,
+	query_player: Query<&Player>,
+	query_meteor: Query<&Meteor>
 ) {
     screen_overflow::correction_screen_overflow_small_entities(&win_size, small_movable_entities_query);
-	screen_overflow::correction_screen_overflow_large_entities(commands, win_size, large_movable_entities_query, large_movable_entities_with_velocity_query);
+
+	screen_overflow::correction_screen_overflow_large_entities(
+		commands,
+		win_size,
+		large_movable_entities_query,
+		large_movable_entities_with_velocity_query,
+		game_textures,
+		query_player,
+		query_meteor
+	);
 }
 
 fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut LifeTime)>) {

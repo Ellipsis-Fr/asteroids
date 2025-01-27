@@ -1,5 +1,5 @@
 
-use super::{components, WinSize};
+use super::{components, GameTextures, WinSize};
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ ActiveEvents, Collider, CollisionEvent, ContactForceEvent, RigidBody, Velocity };
@@ -31,7 +31,10 @@ pub fn correction_screen_overflow_large_entities(
 	mut commands: Commands,
 	win_size: Res<WinSize>,
 	mut large_movable_entities_query: Query<(Entity, &mut Transform, &Collider, &mut FakeEntities), Without<Fake>>,
-	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>
+	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>,
+	game_textures: Res<GameTextures>,
+	query_player: Query<&Player>,
+	query_meteor: Query<&Meteor>
 ) {
     let (screen_left_limit, screen_right_limit) = win_size.x_axys_limit;
 	let (screen_bottom_limit, screen_top_limit) = win_size.y_axys_limit;
@@ -40,6 +43,13 @@ pub fn correction_screen_overflow_large_entities(
 		let Vec3 {x, y, z} = transform.translation;
 		let pos_or_neg_rotation = if transform.rotation.w > 0.0 { 1. } else { -1. };
 		let radian_angle = transform.rotation.z.asin() * 2. * pos_or_neg_rotation;
+		
+		let texture= if let Ok(_) = query_player.get(entity) {
+			game_textures.player.clone()
+		} else {
+			game_textures.meteor.clone()
+		};
+
 		let velocity_result = large_movable_entities_with_velocity_query.get(entity);
 
 		let (
@@ -61,16 +71,19 @@ pub fn correction_screen_overflow_large_entities(
 				x_third_duplication = Some(x);
 				
 				let fake_entity = commands
-					.spawn(collider.clone())
+					.spawn(SpriteBundle {
+						texture: texture.clone(),
+						transform: Transform {
+							translation: Vec3 { x, y, z },
+							rotation: transform.rotation,
+							scale: transform.scale
+						},
+						..Default::default()
+					})
+					.insert(collider.clone())
 					.insert(RigidBody::Dynamic)
 					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
 					.insert(Fake)
-					.insert(TransformBundle::from(Transform {
-								translation: Vec3 { x, y, z },
-								rotation: transform.rotation,
-								scale: transform.scale
-							}
-					))
 					.id();
 
 				if let Ok(velocity) = velocity_result {
@@ -90,15 +103,19 @@ pub fn correction_screen_overflow_large_entities(
 				y_third_duplication = Some(y);
 
 				let fake_entity = commands
-					.spawn(collider.clone())
+					.spawn(SpriteBundle {
+						texture: texture.clone(),
+						transform: Transform {
+							translation: Vec3 { x, y, z },
+							rotation: transform.rotation,
+							scale: transform.scale
+						},
+						..Default::default()
+					})
+					.insert(collider.clone())
 					.insert(RigidBody::Dynamic)
 					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
 					.insert(Fake)
-					.insert(TransformBundle::from(Transform {
-						translation: Vec3 { x, y, z },
-						rotation: transform.rotation,
-						scale: transform.scale
-					}))
 					.id();
 
 				if let Ok(velocity) = velocity_result {
@@ -111,16 +128,19 @@ pub fn correction_screen_overflow_large_entities(
 
 		if x_third_duplication.is_some() && y_third_duplication.is_some() {
 			let fake_entity = commands
-					.spawn(collider.clone())
+					.spawn(SpriteBundle {
+						texture: texture.clone(),
+						transform: Transform {
+							translation: Vec3 { x: x_third_duplication.unwrap(), y: y_third_duplication.unwrap(), z },
+							rotation: transform.rotation,
+							scale: transform.scale
+						},
+						..Default::default()
+					})
+					.insert(collider.clone())
 					.insert(RigidBody::Dynamic)
 					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
 					.insert(Fake)
-					.insert(TransformBundle::from(Transform {
-						translation: Vec3 { x: x_third_duplication.unwrap(), y: y_third_duplication.unwrap(), z },
-						rotation: transform.rotation,
-						scale: transform.scale
-					}
-				))
 				.id();
 
 			if let Ok(velocity) = velocity_result {
