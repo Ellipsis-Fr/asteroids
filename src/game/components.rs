@@ -137,7 +137,7 @@ impl Default for ExplosionTimer {
 pub struct RocketFire;
 
 #[derive(Component)]
-pub struct RocketDrag;
+pub struct Spark;
 
 #[derive(Component)]
 pub struct RocketDragTimer(pub Timer, pub Timer, pub Timer);

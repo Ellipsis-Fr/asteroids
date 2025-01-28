@@ -7,7 +7,6 @@ use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, 
 
 const MARGIN: f32 = 10.;
 
-
 pub fn correction_screen_overflow_small_entities(win_size: &Res<WinSize>, mut query: Query<&mut Transform, (Without<Fake>, Without<FakeEntities>)>) {
 	for mut transform in query.iter_mut() {
         let translation = &mut transform.translation;

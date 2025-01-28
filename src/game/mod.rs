@@ -5,13 +5,14 @@ mod tech_details;
 mod components;
 mod wave;
 mod screen_overflow;
+mod collision;
 
 use std::env;
 use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
-use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, RigidBody, Velocity }};
-use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
+use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, KinematicCharacterController, RigidBody, Velocity }};
+use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer, RocketFire, Spark};
 use player::PlayerPlugin;
 use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
@@ -92,6 +93,7 @@ impl Plugin for GamePlugin {
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
 		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system))
+		.add_systems(Last, handle_contact_from_duplicated_entities_system)
 		.add_systems(First, remove_fake_entities_system);
     }
 }
@@ -175,6 +177,24 @@ fn check_life_time_system(mut commands: Commands, time: Res<Time>, mut query: Qu
     }
 }
 
+fn handle_contact_from_duplicated_entities_system(
+	mut contact_force_events: EventReader<ContactForceEvent>,
+	fake_uncontrollable_entities_query: Query<(Entity, &Velocity), With<Fake>>,
+	fake_controllable_entities_query: Query<(Entity), (With<Fake>, Without<Velocity>)>,
+	mut original_uncontrollable_entities_query: Query<(&mut FakeEntities, &mut Velocity), Without<Fake>>,
+	mut original_controllable_entities_query: Query<(&mut FakeEntities, &mut KinematicCharacterController), (Without<Fake>, Without<Velocity>)>,
+	query: Query<Entity, Or<(With<Laser>, With<RocketFire>, With<Spark>)>>
+) {
+	collision::handle_contact_from_duplicated_entities(
+		contact_force_events,
+		fake_uncontrollable_entities_query,
+		fake_controllable_entities_query,
+		original_uncontrollable_entities_query,
+		original_controllable_entities_query,
+		query
+	);
+}
+
 fn handle_fire_events_system(
 	mut commands: Commands,
 	mut fragments: ResMut<Fragments>,
@@ -183,97 +203,9 @@ fn handle_fire_events_system(
 	query_meteor: Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
 	query_laser: Query<(Entity, &Velocity), With<Laser>>
 ) {
-    let mut entities_whose_collision_event_is_processed = HashSet::new();
-
-	'outer: for collision_event in collision_events.read() {
-		
-		let (entity_a, entity_b) = match get_entities_touched(collision_event, &mut entities_whose_collision_event_is_processed) {
-			None => continue,
-			Some((entity_a, entity_b)) => (entity_a, entity_b)
-		};
-
-		let mut laser_direction = None;
-		for (entity_laser, velocity) in &query_laser {
-			if entity_laser == entity_a || entity_laser == entity_b {
-				let x = if velocity.linvel.x > 0. { 1. } else { -1. };
-				let y = if velocity.linvel.y > 0. { 1. } else { -1. };
-				laser_direction = Some(Vec2 {x, y});
-			}
-		}
-
-		for (entity_meteor, meteor_level, mass, velocity, transform) in &query_meteor {
-			if entity_meteor == entity_a || entity_meteor == entity_b {
-				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction.unwrap());
-				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
-				commands.entity(entity_a).despawn();
-				commands.entity(entity_b).despawn();
-				break 'outer;
-			}
-		}
-    }
+    collision::handle_fire_events(commands, fragments, destroyed_meteors, collision_events, query_meteor, query_laser);
 }
 
-fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -> Vec2 {
-	let direction = |meteor_direction, laser_direction| -> f32 {
-		if meteor_direction > 0. {
-			if laser_direction > 0. {
-				meteor_direction
-			} else {
-				meteor_direction * -1.
-			}
-		} else {
-			if laser_direction > 0. {
-				meteor_direction * -1.
-			} else {
-				meteor_direction
-			}
-		}
-	};
-
-	Vec2 { x: direction(velocity.linvel.x, laser_direction.x), y: direction(velocity.linvel.y, laser_direction.y) }
-}
-
-fn get_entities_touched(collision_event: &CollisionEvent, entities_whose_collision_event_is_processed: &mut HashSet<Entity>) -> Option<(Entity, Entity)> {
-	if let CollisionEvent::Started(entity_a, entity_b, _) = collision_event {
-		if entities_whose_collision_event_is_processed.contains(entity_a) || entities_whose_collision_event_is_processed.contains(entity_b) {
-			None
-		} else {
-			entities_whose_collision_event_is_processed.insert(entity_a.clone());
-			entities_whose_collision_event_is_processed.insert(entity_b.clone());
-			Some((entity_a.clone(), entity_b.clone()))
-		}
-	} else {
-		None
-	}
-}
-
-fn handle_entity_destruction(
-	mut fragments: &mut ResMut<Fragments>,
-	mut destroyed_meteors: &mut ResMut<DestroyedMeteors>,
-	meteor_level: &MeteorLevel,
-	mass: &ColliderMassProperties,
-	velocity: Vec2,
-	transform: &Transform
-) {
-	let entity_translation = transform.translation; 
-	
-	fragments.0.push(entity_translation.clone());
-
-	if meteor_level.0 < 3 {
-		destroyed_meteors.0.push((
-			MeteorDefinition {
-				weight: match mass {
-						ColliderMassProperties::Mass(value) => *value,
-						_ => panic!()
-					},
-				speed: [velocity.x, velocity.y],
-				kind: 0,
-				level: meteor_level.0
-			},
-			entity_translation.clone()
-		));
-	}
-}
 
 fn remove_fake_entities_system(mut commands: Commands, query_fake_entities: Query<Entity, With<Fake>>) {
 	for entity in query_fake_entities.iter() {

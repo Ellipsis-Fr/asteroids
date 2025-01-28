@@ -2,7 +2,7 @@ use std::{f32::consts::PI, time::Instant};
 use  bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_rapier2d::{na::Translation, prelude::{ActiveEvents, Collider, CollisionGroups, Group, KinematicCharacterController, RigidBody, Sensor, Velocity}};
 use rand::{random, Rng};
-use super::{components::{Acceleration, Direction, FakeEntities, Laser, LifeTime, Player, RocketDragTimer, RocketFire}, GameTextures, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{Acceleration, Direction, FakeEntities, Laser, LifeTime, Player, RocketDragTimer, RocketFire, Spark}, GameTextures, BASE_SPEED, LASER_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
 
 
 // region:    --- Constants
@@ -145,6 +145,7 @@ fn propulsion_effect_system(
                 })
                 .insert(RigidBody::KinematicVelocityBased)
                 .insert(Velocity { linvel: calculate_velocity(Vec2::ZERO, (direction.rotation_angle_degrees + 180. + random_angle).to_radians(), 100.), angvel: random_angvel })
+                .insert(Spark)
                 .insert(rocket_drag_timer)
                 .insert(LifeTime(Timer::from_seconds(life_time_in_seconds_for_rocket_drag, TimerMode::Once)));
         }
