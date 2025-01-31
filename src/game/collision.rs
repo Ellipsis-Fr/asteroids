@@ -74,30 +74,85 @@ pub fn handle_fire_events(
 
 	'outer: for collision_event in collision_events.read() {
 		
-		let (entity_a, entity_b) = match get_entities_touched(collision_event, &mut entities_whose_collision_event_is_processed) {
+		let (laser_entity, meteor_entity) = match get_entities_touched(collision_event, &query_meteor, &query_laser, &mut entities_whose_collision_event_is_processed) {
 			None => continue,
-			Some((entity_a, entity_b)) => (entity_a, entity_b)
+			Some((laser_entity, meteor_entity)) => (laser_entity, meteor_entity)
 		};
 
-		let mut laser_direction = None;
-		for (entity_laser, velocity) in &query_laser {
-			if entity_laser == entity_a || entity_laser == entity_b {
-				let x = if velocity.linvel.x > 0. { 1. } else { -1. };
-				let y = if velocity.linvel.y > 0. { 1. } else { -1. };
-				laser_direction = Some(Vec2 {x, y});
-			}
-		}
+		let laser_direction = get_laser_direction(&query_laser, laser_entity);
+		commands.entity(laser_entity).despawn();
 
-		for (entity_meteor, meteor_level, mass, velocity, transform) in &query_meteor {
-			if entity_meteor == entity_a || entity_meteor == entity_b {
-				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction.unwrap());
-				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
-				commands.entity(entity_a).despawn();
-				commands.entity(entity_b).despawn();
-				break 'outer;
-			}
+		if let Ok(((_, meteor_level, mass, velocity, transform))) = query_meteor.get(meteor_entity) {
+			let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
+			handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
+			commands.entity(meteor_entity).despawn();
 		}
     }
+}
+
+fn get_entities_touched(
+	collision_event: &CollisionEvent,
+	query_meteor: &Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_laser: &Query<(Entity, &Velocity), With<Laser>>,
+	entities_whose_collision_event_is_processed: &mut HashSet<Entity>
+) -> Option<(Entity, Entity)> {
+	if let CollisionEvent::Started(entity_a, entity_b, _) = collision_event {
+		if entities_whose_collision_event_is_processed.contains(entity_a) || entities_whose_collision_event_is_processed.contains(entity_b) {
+			None
+		} else {
+			entities_whose_collision_event_is_processed.insert(entity_a.clone());
+			entities_whose_collision_event_is_processed.insert(entity_b.clone());
+
+			let (laser_entity, meteor_entity) = identify_entities(query_meteor, query_laser, entity_a, entity_b);
+
+			match (laser_entity, meteor_entity) {
+				(Some(laser), Some(meteor)) => Some((laser, meteor)),
+				_ => None
+			}
+		}
+	} else {
+		None
+	}
+}
+
+fn identify_entities(
+	query_meteor: &Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_laser: &Query<(Entity, &Velocity), With<Laser>>,
+	entity_a: &Entity,
+	entity_b: &Entity
+) -> (Option<Entity>, Option<Entity>) {
+	let laser_entity = match query_laser.get(*entity_a) {
+		Ok((entity, _)) => Some(entity),
+		Err(_) => {
+			match query_laser.get(*entity_b) {
+				Ok((entity, _)) => Some(entity),
+				Err(_) => None
+			}
+		}
+	};
+
+	let meteor_entity = match query_meteor.get(*entity_a) {
+		Ok((entity, _, _, _, _)) => Some(entity),
+		Err(_) => {
+			match query_meteor.get(*entity_b) {
+				Ok((entity, __, _, _, _)) => Some(entity),
+				Err(_) => None
+			}
+		}
+	};
+
+	(laser_entity, meteor_entity)
+}
+
+fn get_laser_direction(query_laser: &Query<'_, '_, (Entity, &Velocity), With<Laser>>, laser_entity: Entity) -> Vec2 {
+	match query_laser.get(laser_entity) {
+		Ok((_, velocity)) => {
+			let x = if velocity.linvel.x > 0. { 1. } else { -1. };
+			let y = if velocity.linvel.y > 0. { 1. } else { -1. };
+			Vec2 {x, y}
+		},
+		Err(e) => panic!("{:?}", e)
+	}
 }
 
 fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -> Vec2 {
@@ -118,20 +173,6 @@ fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -
 	};
 
 	Vec2 { x: direction(velocity.linvel.x, laser_direction.x), y: direction(velocity.linvel.y, laser_direction.y) }
-}
-
-fn get_entities_touched(collision_event: &CollisionEvent, entities_whose_collision_event_is_processed: &mut HashSet<Entity>) -> Option<(Entity, Entity)> {
-	if let CollisionEvent::Started(entity_a, entity_b, _) = collision_event {
-		if entities_whose_collision_event_is_processed.contains(entity_a) || entities_whose_collision_event_is_processed.contains(entity_b) {
-			None
-		} else {
-			entities_whose_collision_event_is_processed.insert(entity_a.clone());
-			entities_whose_collision_event_is_processed.insert(entity_b.clone());
-			Some((entity_a.clone(), entity_b.clone()))
-		}
-	} else {
-		None
-	}
 }
 
 fn handle_entity_destruction(
