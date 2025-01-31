@@ -1,7 +1,7 @@
 1:
   meteors:
   - weight: 10.
-    speed: [30., 40.]
+    speed: [20., 20.]
     kind: 1
     level: 1
   - weight: 20.

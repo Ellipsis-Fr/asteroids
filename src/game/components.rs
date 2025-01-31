@@ -1,12 +1,26 @@
 use std::f32::consts::PI;
 
-use bevy::{prelude::{Component, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
+use bevy::{prelude::{Component, Entity, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
 
 use crate::game::{BASE_SPEED, TIME_STEP};
 
 use rand::{random, Rng};
 
 // region:    --- Common Components
+
+#[derive(Clone)]
+pub enum EntityType {
+    Player(Player),
+    Meteor(Meteor),
+    Laser(Laser)
+}
+
+#[derive(Component)]
+pub struct Fake;
+
+#[derive(Component)]
+pub struct FakeEntities(pub Vec<Entity>);
+
 const MAX_ACCELERATION: f32 = 0.5;
 
 #[derive(Component)]
@@ -81,7 +95,7 @@ impl Direction {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Laser;
 
 #[derive(Component)]
@@ -95,7 +109,7 @@ impl Default for LaserTimer {
 // endregion: --- Common Components
 
 // region:    --- Player Component
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Player;
 
 #[derive(Component)]
@@ -131,7 +145,7 @@ impl Default for ExplosionTimer {
 pub struct RocketFire;
 
 #[derive(Component)]
-pub struct RocketDrag;
+pub struct Spark;
 
 #[derive(Component)]
 pub struct RocketDragTimer(pub Timer, pub Timer, pub Timer);
@@ -157,7 +171,7 @@ pub struct LifeTime(pub Timer);
 
 
 // region:    --- Meteor Component
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Meteor;
 
 #[derive(Component)]
