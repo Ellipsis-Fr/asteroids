@@ -67,7 +67,9 @@ pub fn handle_fire_events(
 	mut fragments: ResMut<Fragments>,
 	mut destroyed_meteors: ResMut<DestroyedMeteors>,
 	mut collision_events: EventReader<CollisionEvent>,
-	query_meteor: Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
+	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,
+	query_meteor_fake: Query<Entity, (With<Meteor>, With<Fake>)>,
 	query_laser: Query<(Entity, &Velocity), With<Laser>>
 ) {
     let mut entities_whose_collision_event_is_processed = HashSet::new();
@@ -82,17 +84,28 @@ pub fn handle_fire_events(
 		let laser_direction = get_laser_direction(&query_laser, laser_entity);
 		commands.entity(laser_entity).despawn();
 
-		if let Ok(((_, meteor_level, mass, velocity, transform))) = query_meteor.get(meteor_entity) {
-			let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
-			handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
-			commands.entity(meteor_entity).despawn();
+		if let Ok(((_, velocity, transform))) = query_meteor.get(meteor_entity) {
+			
+			if let Ok(_) = query_meteor_fake.get(meteor_entity) {
+				for (original_meteor_entity, fake_entities, meteor_level, mass) in query_meteor_original.iter() {
+					if fake_entities.0.contains(&meteor_entity) {
+						let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
+						handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
+						commands.entity(original_meteor_entity).despawn();
+					}
+				}
+			} else if let Ok(((_, _, meteor_level, mass))) = query_meteor_original.get(meteor_entity) {
+				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
+				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
+				commands.entity(meteor_entity).despawn();
+			};
 		}
     }
 }
 
 fn get_entities_touched(
 	collision_event: &CollisionEvent,
-	query_meteor: &Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_meteor: &Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_laser: &Query<(Entity, &Velocity), With<Laser>>,
 	entities_whose_collision_event_is_processed: &mut HashSet<Entity>
 ) -> Option<(Entity, Entity)> {
@@ -116,7 +129,7 @@ fn get_entities_touched(
 }
 
 fn identify_entities(
-	query_meteor: &Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_meteor: &Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_laser: &Query<(Entity, &Velocity), With<Laser>>,
 	entity_a: &Entity,
 	entity_b: &Entity
@@ -132,10 +145,10 @@ fn identify_entities(
 	};
 
 	let meteor_entity = match query_meteor.get(*entity_a) {
-		Ok((entity, _, _, _, _)) => Some(entity),
+		Ok((entity, _, _)) => Some(entity),
 		Err(_) => {
 			match query_meteor.get(*entity_b) {
-				Ok((entity, __, _, _, _)) => Some(entity),
+				Ok((entity, _, _)) => Some(entity),
 				Err(_) => None
 			}
 		}

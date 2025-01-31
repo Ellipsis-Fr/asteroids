@@ -7,6 +7,14 @@ use crate::game::{BASE_SPEED, TIME_STEP};
 use rand::{random, Rng};
 
 // region:    --- Common Components
+
+#[derive(Clone)]
+pub enum EntityType {
+    Player(Player),
+    Meteor(Meteor),
+    Laser(Laser)
+}
+
 #[derive(Component)]
 pub struct Fake;
 
@@ -87,7 +95,7 @@ impl Direction {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Laser;
 
 #[derive(Component)]
@@ -101,7 +109,7 @@ impl Default for LaserTimer {
 // endregion: --- Common Components
 
 // region:    --- Player Component
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Player;
 
 #[derive(Component)]
@@ -163,7 +171,7 @@ pub struct LifeTime(pub Timer);
 
 
 // region:    --- Meteor Component
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Meteor;
 
 #[derive(Component)]

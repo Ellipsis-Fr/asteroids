@@ -92,8 +92,8 @@ impl Plugin for GamePlugin {
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
 		.add_systems(Update, make_visible)
-		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system, handle_fire_events_system))
-		.add_systems(Last, handle_contact_from_duplicated_entities_system)
+		.add_systems(Update, (correction_screen_overflow_system, check_life_time_system))
+		.add_systems(Last, (handle_fire_events_system, handle_contact_from_duplicated_entities_system).chain())
 		.add_systems(First, remove_fake_entities_system);
     }
 }
@@ -200,10 +200,12 @@ fn handle_fire_events_system(
 	mut fragments: ResMut<Fragments>,
 	mut destroyed_meteors: ResMut<DestroyedMeteors>,
 	mut collision_events: EventReader<CollisionEvent>,
-	query_meteor: Query<(Entity, &MeteorLevel, &ColliderMassProperties, &Velocity, &Transform), With<Meteor>>,
+	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
+	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,
+	query_meteor_fake: Query<Entity, (With<Meteor>, With<Fake>)>,
 	query_laser: Query<(Entity, &Velocity), With<Laser>>
 ) {
-    collision::handle_fire_events(commands, fragments, destroyed_meteors, collision_events, query_meteor, query_laser);
+    collision::handle_fire_events(commands, fragments, destroyed_meteors, collision_events, query_meteor, query_meteor_original, query_meteor_fake, query_laser);
 }
 
 

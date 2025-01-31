@@ -1,5 +1,5 @@
 
-use super::{components, GameTextures, WinSize};
+use super::{components::{self, EntityType}, GameTextures, WinSize};
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ ActiveEvents, Collider, CollisionEvent, ContactForceEvent, RigidBody, Velocity };
@@ -43,10 +43,10 @@ pub fn correction_screen_overflow_large_entities(
 		let pos_or_neg_rotation = if transform.rotation.w > 0.0 { 1. } else { -1. };
 		let radian_angle = transform.rotation.z.asin() * 2. * pos_or_neg_rotation;
 		
-		let texture= if let Ok(_) = query_player.get(entity) {
-			game_textures.player.clone()
+		let (texture, component) = if let Ok(_) = query_player.get(entity) {
+			(game_textures.player.clone(), EntityType::Player(Player))
 		} else {
-			game_textures.meteor.clone()
+			(game_textures.meteor.clone(), EntityType::Meteor(Meteor))
 		};
 
 		let velocity_result = large_movable_entities_with_velocity_query.get(entity);
@@ -85,6 +85,16 @@ pub fn correction_screen_overflow_large_entities(
 					.insert(Fake)
 					.id();
 
+				match component.clone() {
+					EntityType::Player(player) => {
+						commands.entity(fake_entity).insert(player);
+					}
+					EntityType::Meteor(meteor) => {
+						commands.entity(fake_entity).insert(meteor);
+					},
+					_ => panic!()
+				}
+
 				if let Ok(velocity) = velocity_result {
 					commands.entity(fake_entity).insert(velocity.clone());
 				}
@@ -117,6 +127,16 @@ pub fn correction_screen_overflow_large_entities(
 					.insert(Fake)
 					.id();
 
+				match component.clone() {
+					EntityType::Player(player) => {
+						commands.entity(fake_entity).insert(player.clone());
+					}
+					EntityType::Meteor(meteor) => {
+						commands.entity(fake_entity).insert(meteor.clone());
+					},
+					_ => panic!()
+				}
+
 				if let Ok(velocity) = velocity_result {
 					commands.entity(fake_entity).insert(velocity.clone());
 				}
@@ -141,6 +161,16 @@ pub fn correction_screen_overflow_large_entities(
 					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
 					.insert(Fake)
 				.id();
+
+			match component.clone() {
+				EntityType::Player(player) => {
+					commands.entity(fake_entity).insert(player.clone());
+				}
+				EntityType::Meteor(meteor) => {
+					commands.entity(fake_entity).insert(meteor.clone());
+				},
+				_ => panic!()
+			}
 
 			if let Ok(velocity) = velocity_result {
 				commands.entity(fake_entity).insert(velocity.clone());
