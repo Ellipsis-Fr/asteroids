@@ -1,7 +1,8 @@
 use bevy::{prelude::*, utils::HashSet};
 use bevy_rapier2d::prelude::*;
 
-use super::{components::*, meteor::MeteorDefinition, DestroyedMeteors, Fragments};
+use super::{components::*, meteor::MeteorDefinition, Fragments};
+use super::events::*;
 
 
 pub fn handle_contact_from_duplicated_entities(
@@ -65,7 +66,7 @@ fn adapt_new_movement_on_original_entity_from_its_fake_entities_collisioned(
 pub fn handle_fire_events(
     mut commands: Commands,
 	mut fragments: ResMut<Fragments>,
-	mut destroyed_meteors: ResMut<DestroyedMeteors>,
+	mut destroyed_meteors: EventWriter<MeteorDestructionEvent>,
 	mut collision_events: EventReader<CollisionEvent>,
 	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,
@@ -190,7 +191,7 @@ fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -
 
 fn handle_entity_destruction(
 	mut fragments: &mut ResMut<Fragments>,
-	mut destroyed_meteors: &mut ResMut<DestroyedMeteors>,
+	mut destroyed_meteors: &mut EventWriter<MeteorDestructionEvent>,
 	meteor_level: &MeteorLevel,
 	mass: &ColliderMassProperties,
 	velocity: Vec2,
@@ -201,17 +202,19 @@ fn handle_entity_destruction(
 	fragments.0.push(entity_translation.clone());
 
 	if meteor_level.0 < 3 {
-		destroyed_meteors.0.push((
-			MeteorDefinition {
-				weight: match mass {
-						ColliderMassProperties::Mass(value) => *value,
-						_ => panic!()
-					},
-				speed: [velocity.x, velocity.y],
-				kind: 0,
-				level: meteor_level.0
-			},
-			entity_translation.clone()
+		destroyed_meteors.send(MeteorDestructionEvent(
+			(
+				MeteorDefinition {
+					weight: match mass {
+							ColliderMassProperties::Mass(value) => *value,
+							_ => panic!()
+						},
+					speed: [velocity.x, velocity.y],
+					kind: 0,
+					level: meteor_level.0
+				},
+				entity_translation.clone()
+			)
 		));
 	}
 }

@@ -3,6 +3,7 @@ mod player;
 mod meteor;
 mod tech_details;
 mod components;
+mod events;
 mod wave;
 mod screen_overflow;
 mod collision;
@@ -13,6 +14,7 @@ use std::collections::HashSet;
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, KinematicCharacterController, RigidBody, Velocity }};
 use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer, RocketFire, Spark};
+use events::MeteorDestructionEvent;
 use player::PlayerPlugin;
 use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
@@ -73,9 +75,6 @@ struct GameTextures {
 }
 
 #[derive(Resource)]
-struct DestroyedMeteors(pub Vec<(MeteorDefinition, Vec3)>);
-
-#[derive(Resource)]
 struct Fragments(pub Vec<Vec3>);
 
 // endregion:  --- Resources
@@ -86,6 +85,7 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
 		.register_type::<MeteorLevel>()
+		.add_event::<MeteorDestructionEvent>()
         .add_plugins(PlayerPlugin)
         .add_plugins(MeteorPlugin)
 		.add_plugins(TechDetailsPlugin(env::var("ACTIVE_TECH_DETAIL").unwrap_or("false".to_string()) == "true"))
@@ -124,7 +124,6 @@ fn setup_system(
 	 };
 	commands.insert_resource(game_textures);
 
-	commands.insert_resource(DestroyedMeteors(Vec::new()));
 	commands.insert_resource(Fragments(Vec::new()));
 
 	// cancel gravity effect
@@ -198,7 +197,7 @@ fn handle_contact_from_duplicated_entities_system(
 fn handle_fire_events_system(
 	mut commands: Commands,
 	mut fragments: ResMut<Fragments>,
-	mut destroyed_meteors: ResMut<DestroyedMeteors>,
+	mut destroyed_meteors: EventWriter<MeteorDestructionEvent>,
 	mut collision_events: EventReader<CollisionEvent>,
 	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,

@@ -6,9 +6,9 @@ use rand::Rng;
 
 use crate::game::meteor;
 
-use super::{components::{Direction, FakeEntities, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, RocketDragTimer, RocketFire}, wave::Wave, DestroyedMeteors, GameTextures, WinSize, BASE_SPEED, LASER_SIZE, METEOR_SIZE, PLAYER_SIZE, SPRITE_SCALE, TIME_STEP };
+use super::{components::{FakeEntities, Meteor, MeteorLevel}, events::MeteorDestructionEvent, wave::Wave, GameTextures, WinSize, BASE_SPEED, METEOR_SIZE, SPRITE_SCALE, TIME_STEP };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeteorDefinition {
     pub weight: f32,
     pub speed: [f32; 2],
@@ -33,7 +33,7 @@ impl Plugin for MeteorPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (
             meteor_spawn_system.run_if(enough_meteors_to_spawn),
-            child_meteor_spawn_system.run_if(meteors_destroyed),
+            child_meteor_spawn_system,
             adjust_meteor_speed_system
         ));
     }
@@ -72,14 +72,9 @@ fn get_meteor_definition_mapped(win_size: &Res<WinSize>, meteor_definition: Mete
     }
 }
 
-fn meteors_destroyed(destroyed_meteors: Res<DestroyedMeteors>) -> bool {
-    !destroyed_meteors.0.is_empty()
-}
-
-fn child_meteor_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>, mut destroyed_meteors: ResMut<DestroyedMeteors>) {
-    let meteors = std::mem::take(&mut destroyed_meteors.0);
-    
-    for (meteor_definition, translation) in meteors {
+fn child_meteor_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>, mut meteor_destruction_events: EventReader<MeteorDestructionEvent>) {
+    for meteor_destruction_event in meteor_destruction_events.read() {
+        let (meteor_definition, translation) = meteor_destruction_event.0.clone();
         let meteors_to_spawn = get_meteors(translation, meteor_definition);
 
         for meteor in meteors_to_spawn {
