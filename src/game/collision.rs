@@ -1,7 +1,8 @@
 use bevy::{prelude::*, utils::HashSet};
 use bevy_rapier2d::prelude::*;
 
-use super::{components::*, meteor::MeteorDefinition, DestroyedMeteors, Fragments};
+use super::{components::*, meteor::MeteorDefinition};
+use super::events::*;
 
 
 pub fn handle_contact_from_duplicated_entities(
@@ -64,8 +65,8 @@ fn adapt_new_movement_on_original_entity_from_its_fake_entities_collisioned(
 
 pub fn handle_fire_events(
     mut commands: Commands,
-	mut fragments: ResMut<Fragments>,
-	mut destroyed_meteors: ResMut<DestroyedMeteors>,
+	mut fragment_event: EventWriter<FragmentEvent>,
+	mut destroyed_meteors_event: EventWriter<MeteorDestructionEvent>,
 	mut collision_events: EventReader<CollisionEvent>,
 	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,
@@ -90,13 +91,13 @@ pub fn handle_fire_events(
 				for (original_meteor_entity, fake_entities, meteor_level, mass) in query_meteor_original.iter() {
 					if fake_entities.0.contains(&meteor_entity) {
 						let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
-						handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
+						handle_entity_destruction(&mut fragment_event, &mut destroyed_meteors_event, meteor_level, mass, meteor_velocity, transform);
 						commands.entity(original_meteor_entity).despawn();
 					}
 				}
 			} else if let Ok(((_, _, meteor_level, mass))) = query_meteor_original.get(meteor_entity) {
 				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
-				handle_entity_destruction(&mut fragments, &mut destroyed_meteors, meteor_level, mass, meteor_velocity, transform);
+				handle_entity_destruction(&mut fragment_event, &mut destroyed_meteors_event, meteor_level, mass, meteor_velocity, transform);
 				commands.entity(meteor_entity).despawn();
 			};
 		}
@@ -189,8 +190,8 @@ fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -
 }
 
 fn handle_entity_destruction(
-	mut fragments: &mut ResMut<Fragments>,
-	mut destroyed_meteors: &mut ResMut<DestroyedMeteors>,
+	mut fragment_event: &mut EventWriter<FragmentEvent>,
+	mut destroyed_meteors_event: &mut EventWriter<MeteorDestructionEvent>,
 	meteor_level: &MeteorLevel,
 	mass: &ColliderMassProperties,
 	velocity: Vec2,
@@ -198,10 +199,10 @@ fn handle_entity_destruction(
 ) {
 	let entity_translation = transform.translation; 
 	
-	fragments.0.push(entity_translation.clone());
+	fragment_event.send(FragmentEvent(entity_translation.clone()));
 
-	if meteor_level.0 < 3 {
-		destroyed_meteors.0.push((
+	destroyed_meteors_event.send(MeteorDestructionEvent(
+		(
 			MeteorDefinition {
 				weight: match mass {
 						ColliderMassProperties::Mass(value) => *value,
@@ -212,6 +213,6 @@ fn handle_entity_destruction(
 				level: meteor_level.0
 			},
 			entity_translation.clone()
-		));
-	}
+		)
+	));
 }
