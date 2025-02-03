@@ -148,6 +148,9 @@ pub struct RocketFire;
 pub struct Spark;
 
 #[derive(Component)]
+pub struct Fragment;
+
+#[derive(Component)]
 pub struct RocketDragTimer(pub Timer, pub Timer, pub Timer);
 
 impl RocketDragTimer {

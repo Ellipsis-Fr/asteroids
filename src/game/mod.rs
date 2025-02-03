@@ -1,6 +1,7 @@
 #![allow(unused)]
 mod player;
 mod meteor;
+mod fragment;
 mod tech_details;
 mod components;
 mod events;
@@ -14,7 +15,8 @@ use std::collections::HashSet;
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, KinematicCharacterController, RigidBody, Velocity }};
 use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer, RocketFire, Spark};
-use events::MeteorDestructionEvent;
+use events::{FragmentEvent, MeteorDestructionEvent};
+use fragment::FragmentPlugin;
 use player::PlayerPlugin;
 use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
@@ -74,9 +76,6 @@ struct GameTextures {
 	meteor: Handle<Image>,
 }
 
-#[derive(Resource)]
-struct Fragments(pub Vec<Vec3>);
-
 // endregion:  --- Resources
 
 pub struct GamePlugin;
@@ -86,8 +85,10 @@ impl Plugin for GamePlugin {
         app
 		.register_type::<MeteorLevel>()
 		.add_event::<MeteorDestructionEvent>()
+		.add_event::<FragmentEvent>()
         .add_plugins(PlayerPlugin)
         .add_plugins(MeteorPlugin)
+        .add_plugins(FragmentPlugin)
 		.add_plugins(TechDetailsPlugin(env::var("ACTIVE_TECH_DETAIL").unwrap_or("false".to_string()) == "true"))
         .add_systems(Startup, setup_system)
 		.add_systems(PostStartup, init_wave_system)
@@ -123,8 +124,6 @@ fn setup_system(
 		meteor: asset_server.load(METEOR_SPRITE)
 	 };
 	commands.insert_resource(game_textures);
-
-	commands.insert_resource(Fragments(Vec::new()));
 
 	// cancel gravity effect
     rapier_configuration.gravity = Vec2::new(0., 0.);
@@ -196,15 +195,15 @@ fn handle_contact_from_duplicated_entities_system(
 
 fn handle_fire_events_system(
 	mut commands: Commands,
-	mut fragments: ResMut<Fragments>,
-	mut destroyed_meteors: EventWriter<MeteorDestructionEvent>,
+	mut fragment_event: EventWriter<FragmentEvent>,
+	mut destroyed_meteors_event: EventWriter<MeteorDestructionEvent>,
 	mut collision_events: EventReader<CollisionEvent>,
 	query_meteor: Query<(Entity, &Velocity, &Transform), With<Meteor>>,
 	query_meteor_original: Query<(Entity, &FakeEntities, &MeteorLevel, &ColliderMassProperties), With<Meteor>>,
 	query_meteor_fake: Query<Entity, (With<Meteor>, With<Fake>)>,
 	query_laser: Query<(Entity, &Velocity), With<Laser>>
 ) {
-    collision::handle_fire_events(commands, fragments, destroyed_meteors, collision_events, query_meteor, query_meteor_original, query_meteor_fake, query_laser);
+    collision::handle_fire_events(commands, fragment_event, destroyed_meteors_event, collision_events, query_meteor, query_meteor_original, query_meteor_fake, query_laser);
 }
 
 

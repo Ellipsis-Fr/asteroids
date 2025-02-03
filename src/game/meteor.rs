@@ -27,6 +27,8 @@ struct MeteorMapper {
     level: u8,
 }
 
+const MAX_GENERATION_NUMBER: u8 = 3;
+
 pub struct MeteorPlugin;
 
 impl Plugin for MeteorPlugin {
@@ -75,10 +77,12 @@ fn get_meteor_definition_mapped(win_size: &Res<WinSize>, meteor_definition: Mete
 fn child_meteor_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>, mut meteor_destruction_events: EventReader<MeteorDestructionEvent>) {
     for meteor_destruction_event in meteor_destruction_events.read() {
         let (meteor_definition, translation) = meteor_destruction_event.0.clone();
-        let meteors_to_spawn = get_meteors(translation, meteor_definition);
-
-        for meteor in meteors_to_spawn {
-            spawn_meteor(&mut commands, &game_textures, meteor);
+        if meteor_definition.level < MAX_GENERATION_NUMBER {
+            let meteors_to_spawn = get_meteors(translation, meteor_definition);
+    
+            for meteor in meteors_to_spawn {
+                spawn_meteor(&mut commands, &game_textures, meteor);
+            }
         }
     }
 }
