@@ -4,22 +4,34 @@ use bevy_rapier2d::prelude::*;
 use super::{components::*, meteor::MeteorDefinition};
 use super::events::*;
 
-
+/// This function handle contacts on duplicated entities to report it on the original entity
+/// 
+/// The contacts come from 'ContactForceEvent' (rapier struct using Bevy Event<T> Trait), added to duplicated entities.
+/// Theses events just to be add to one of the two entities in contact to trigger an Event
+/// 
+/// # Arguments
+/// 
+/// * 'contact_force_events' : Event triggered by contacts betwenn two entities having a RigidBody and with at least one of them having component 'ActiveEvents::CONTACT_FORCE_EVENTS'
+/// * 'fake_uncontrollable_entities_query' : query of entities duplicated not playable (meteor, enemie ship) necessary to get the result of the impact on the entity
+/// * 'fake_controllable_entities_query' : query of entities duplicated playable (player) necessary to get the result of the impact on the entity
+/// * 'original_uncontrollable_entities_query' : query of entities original not playable (meteor, enemie ship)
+/// * 'original_controllable_entities_query' : query of entities original playable (player)
+/// * 'entities_ignored_query' : query of entities to ignore
+/// 
 pub fn handle_contact_from_duplicated_entities(
     mut contact_force_events: EventReader<ContactForceEvent>,
 	fake_uncontrollable_entities_query: Query<(Entity, &Velocity), With<Fake>>,
 	fake_controllable_entities_query: Query<Entity, (With<Fake>, Without<Velocity>)>,
 	mut original_uncontrollable_entities_query: Query<(&mut FakeEntities, &mut Velocity), Without<Fake>>,
 	mut original_controllable_entities_query: Query<(&mut FakeEntities, &mut KinematicCharacterController), (Without<Fake>, Without<Velocity>)>,
-    query: Query<Entity, Or<(With<Laser>, With<RocketFire>, With<Spark>)>>
+    entities_ignored_query: Query<Entity, Or<(With<Laser>, With<RocketFire>, With<Spark>)>>
 ) {
     for contact_force_event in contact_force_events.read() {
-        // println!("Received contact force event: {:?}", contact_force_event);
 
 		let entity_from_collider1 = contact_force_event.collider1;
 		let entity_from_collider2 = contact_force_event.collider2;
 
-        if query.get(entity_from_collider1).is_ok() || query.get(entity_from_collider2).is_ok() {
+        if entities_ignored_query.get(entity_from_collider1).is_ok() || entities_ignored_query.get(entity_from_collider2).is_ok() {
             continue;
         }
 
@@ -41,6 +53,27 @@ pub fn handle_contact_from_duplicated_entities(
 	}
 }
 
+/// This function transfers the consequences of the contact of the duplicated entity to the original entity
+/// 
+/// # Arguments
+/// 
+/// * 'entity_from_collider' : Entity resulting from ContactForceEvent
+/// * 'fake_uncontrollable_entities_query' : query of entities duplicated not playable (meteor, enemie ship) necessary to get the result of the impact on the entity
+/// * 'fake_controllable_entities_query' : query of entities duplicated playable (player) necessary to get the result of the impact on the entity
+/// * 'original_uncontrollable_entities_query' : query of entities original not playable (meteor, enemie ship)
+/// * 'original_controllable_entities_query' : query of entities original playable (player)
+/// 
+/// # Explanation
+/// 
+/// To apply the force resulting from ContactForceEvent set on the dupplicated entity we have to find its original entity,
+/// 
+/// At first we search it in 'fake_..._entities_query' to get the new **Velocity** resulting from the contact
+/// 
+/// Then we look for its original entity in the 'original_..._entities_query' by passing on all existing original entities,
+/// and for each one we look if their associated **fake_entities** contains this fake entity
+/// 
+/// If so, we apply on it the new velocity
+/// 
 fn adapt_new_movement_on_original_entity_from_its_fake_entities_collisioned(
     entity_from_collider: Entity,
     fake_uncontrollable_entities_query: &Query<(Entity, &Velocity), With<Fake>>,
@@ -63,6 +96,19 @@ fn adapt_new_movement_on_original_entity_from_its_fake_entities_collisioned(
     }
 }
 
+/// This function handle the contact between Laser and Destructible components (Meteor, Ship)
+/// 
+/// # Arguments
+/// 
+/// * 'commands' : Bevy struct to handle bevy world
+/// * 'fragment_event' : struct FragementEvent implement Event<T> Bevy's Trait to trigger fragment creation
+/// * 'destroyed_meteors_event' : struct MeteorDestructionEvent implement Event<T> Bevy's Trait to trigger meteor children creation
+/// * 'collision_events' : Event triggered by contacts betwenn two entities with at least one of them having component 'ActiveEvents::COLLISION_EVENTS'
+/// * 'query_meteor' : query for all meteors (originals and dupplicates)
+/// * 'query_meteor_original' : query of originals meteors to get their specific information
+/// * 'query_meteor_fake' : query of duplicated meteors to check if the hit meteor is one of them
+/// * 'query_laser' : query of laser entity to know the impact direction
+/// 
 pub fn handle_fire_events(
     mut commands: Commands,
 	mut fragment_event: EventWriter<FragmentEvent>,
@@ -85,19 +131,17 @@ pub fn handle_fire_events(
 		let laser_direction = get_laser_direction(&query_laser, laser_entity);
 		commands.entity(laser_entity).despawn();
 
-		if let Ok(((_, velocity, transform))) = query_meteor.get(meteor_entity) {
+		if let Ok(((_, meteor_velocity, transform))) = query_meteor.get(meteor_entity) {
 			
 			if let Ok(_) = query_meteor_fake.get(meteor_entity) {
 				for (original_meteor_entity, fake_entities, meteor_level, mass) in query_meteor_original.iter() {
 					if fake_entities.0.contains(&meteor_entity) {
-						let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
-						handle_entity_destruction(&mut fragment_event, &mut destroyed_meteors_event, meteor_level, mass, meteor_velocity, transform);
+						apply_fire_event(&mut fragment_event, &mut destroyed_meteors_event, laser_direction, meteor_level, mass, meteor_velocity, transform);
 						commands.entity(original_meteor_entity).despawn();
 					}
 				}
 			} else if let Ok(((_, _, meteor_level, mass))) = query_meteor_original.get(meteor_entity) {
-				let meteor_velocity = apply_laser_direction_on_meteor(velocity, laser_direction);
-				handle_entity_destruction(&mut fragment_event, &mut destroyed_meteors_event, meteor_level, mass, meteor_velocity, transform);
+				apply_fire_event(&mut fragment_event, &mut destroyed_meteors_event, laser_direction, meteor_level, mass, meteor_velocity, transform);
 				commands.entity(meteor_entity).despawn();
 			};
 		}
@@ -167,6 +211,19 @@ fn get_laser_direction(query_laser: &Query<'_, '_, (Entity, &Velocity), With<Las
 		},
 		Err(e) => panic!("{:?}", e)
 	}
+}
+
+fn apply_fire_event(
+	fragment_event: &mut EventWriter<'_, FragmentEvent>,
+	destroyed_meteors_event: &mut EventWriter<'_, MeteorDestructionEvent>,
+	laser_direction: Vec2,
+	meteor_level: &MeteorLevel,
+	mass: &ColliderMassProperties,
+	meteor_velocity: &Velocity,
+	transform: &Transform
+) {
+	let meteor_velocity = apply_laser_direction_on_meteor(meteor_velocity, laser_direction);
+	handle_entity_destruction(fragment_event, destroyed_meteors_event, meteor_level, mass, meteor_velocity, transform);
 }
 
 fn apply_laser_direction_on_meteor(velocity: &Velocity, laser_direction: Vec2) -> Vec2 {
