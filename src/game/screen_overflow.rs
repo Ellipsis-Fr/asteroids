@@ -1,7 +1,7 @@
 
 use super::{components::{self, EntityType}, GameTextures, WinSize};
 
-use bevy::prelude::*;
+use bevy::{ecs::query::QueryEntityError, prelude::*};
 use bevy_rapier2d::prelude::{ ActiveEvents, Collider, CollisionEvent, ContactForceEvent, RigidBody, Velocity };
 use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer};
 
@@ -35,153 +35,179 @@ pub fn correction_screen_overflow_large_entities(
 	query_player: Query<&Player>,
 	query_meteor: Query<&Meteor>
 ) {
-    let (screen_left_limit, screen_right_limit) = win_size.x_axys_limit;
-	let (screen_bottom_limit, screen_top_limit) = win_size.y_axys_limit;
+    let screen_limits = (win_size.x_axys_limit, win_size.y_axys_limit);
 	
 	for (entity, mut transform, collider, mut fake_entities) in large_movable_entities_query.iter_mut() {
-		let Vec3 {x, y, z} = transform.translation;
-		let pos_or_neg_rotation = if transform.rotation.w > 0.0 { 1. } else { -1. };
-		let radian_angle = transform.rotation.z.asin() * 2. * pos_or_neg_rotation;
-		
-		let (texture, component) = if let Ok(_) = query_player.get(entity) {
-			(game_textures.player.clone(), EntityType::Player(Player))
-		} else {
-			(game_textures.meteor.clone(), EntityType::Meteor(Meteor))
-		};
+		let (x, y, z, radian_angle) = extract_xyzw(&transform);
+		let (texture, component) = get_entity_texture_and_type(entity, &game_textures, &query_player, &query_meteor);
 
 		let velocity_result = large_movable_entities_with_velocity_query.get(entity);
 
-		let (
-			entity_left_limit,
-			entity_right_limit,
-			entity_left_lenght,
-			entity_right_lenght,
-			entity_bottom_limit,
-			entity_top_limit,
-			entity_bottom_lenght,
-			entity_top_lenght
-		) = get_bundle_dimensions(collider, x, y, radian_angle, transform.rotation.clone());
+		let bundle_dimensions = get_bundle_dimensions(collider, x, y, radian_angle, transform.rotation.clone());
 
-		let mut x_third_duplication = None;
-		if let Some((x, needs_duplication)) = check_overflow_coordinate(screen_right_limit, screen_left_limit, entity_right_limit, entity_left_limit, entity_right_lenght, entity_left_lenght) {
-			if !needs_duplication {
-				transform.translation.x = x;
-			} else {
-				x_third_duplication = Some(x);
-				
-				let fake_entity = commands
-					.spawn(SpriteBundle {
-						texture: texture.clone(),
-						transform: Transform {
-							translation: Vec3 { x, y, z },
-							rotation: transform.rotation,
-							scale: transform.scale
-						},
-						..Default::default()
-					})
-					.insert(collider.clone())
-					.insert(RigidBody::Dynamic)
-					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
-					.insert(Fake)
-					.id();
-
-				match component.clone() {
-					EntityType::Player(player) => {
-						commands.entity(fake_entity).insert(player);
-					}
-					EntityType::Meteor(meteor) => {
-						commands.entity(fake_entity).insert(meteor);
-					},
-					_ => panic!()
-				}
-
-				if let Ok(velocity) = velocity_result {
-					commands.entity(fake_entity).insert(velocity.clone());
-				}
-
-				fake_entities.0.push(fake_entity);
-
-			}
-		}
-
-		let mut y_third_duplication = None;
-		if let Some((y, needs_duplication)) = check_overflow_coordinate(screen_top_limit, screen_bottom_limit, entity_top_limit, entity_bottom_limit, entity_top_lenght, entity_bottom_lenght) {
-			if !needs_duplication {
-				transform.translation.y = y;
-			} else {
-				y_third_duplication = Some(y);
-
-				let fake_entity = commands
-					.spawn(SpriteBundle {
-						texture: texture.clone(),
-						transform: Transform {
-							translation: Vec3 { x, y, z },
-							rotation: transform.rotation,
-							scale: transform.scale
-						},
-						..Default::default()
-					})
-					.insert(collider.clone())
-					.insert(RigidBody::Dynamic)
-					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
-					.insert(Fake)
-					.id();
-
-				match component.clone() {
-					EntityType::Player(player) => {
-						commands.entity(fake_entity).insert(player.clone());
-					}
-					EntityType::Meteor(meteor) => {
-						commands.entity(fake_entity).insert(meteor.clone());
-					},
-					_ => panic!()
-				}
-
-				if let Ok(velocity) = velocity_result {
-					commands.entity(fake_entity).insert(velocity.clone());
-				}
-
-				fake_entities.0.push(fake_entity);
-			}
-		}
-
-		if x_third_duplication.is_some() && y_third_duplication.is_some() {
-			let fake_entity = commands
-					.spawn(SpriteBundle {
-						texture: texture.clone(),
-						transform: Transform {
-							translation: Vec3 { x: x_third_duplication.unwrap(), y: y_third_duplication.unwrap(), z },
-							rotation: transform.rotation,
-							scale: transform.scale
-						},
-						..Default::default()
-					})
-					.insert(collider.clone())
-					.insert(RigidBody::Dynamic)
-					.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
-					.insert(Fake)
-				.id();
-
-			match component.clone() {
-				EntityType::Player(player) => {
-					commands.entity(fake_entity).insert(player.clone());
-				}
-				EntityType::Meteor(meteor) => {
-					commands.entity(fake_entity).insert(meteor.clone());
-				},
-				_ => panic!()
-			}
-
-			if let Ok(velocity) = velocity_result {
-				commands.entity(fake_entity).insert(velocity.clone());
-			}
-
-			fake_entities.0.push(fake_entity);
-			
-		} else if x_third_duplication.is_none() && y_third_duplication.is_none() {
-			fake_entities.0 = vec![];
-		}
+		correct_screen_overflow_large_entity(&mut commands, screen_limits, &mut transform, collider, &mut fake_entities, x, y, z, texture, component, velocity_result, bundle_dimensions);
     }
+}
+
+fn correct_screen_overflow_large_entity(
+	commands: &mut Commands,
+	screen_limits: ((f32, f32), (f32, f32)),
+	mut transform: &mut Transform,
+	collider: &Collider,
+	mut fake_entities: &mut FakeEntities,
+	x: f32, y: f32, z: f32,
+	texture: Handle<Image>,
+	component: EntityType,
+	velocity_result: Result<&Velocity, QueryEntityError>,
+	bundle_dimensions: (f32, f32, f32, f32, f32, f32, f32, f32)
+) {
+
+	let ((screen_left_limit, screen_right_limit), (screen_bottom_limit, screen_top_limit)) = (screen_limits.0, screen_limits.1);
+	
+	let (
+		entity_left_limit,
+		entity_right_limit,
+		entity_left_lenght,
+		entity_right_lenght,
+		entity_bottom_limit,
+		entity_top_limit,
+		entity_bottom_lenght,
+		entity_top_lenght
+	) = bundle_dimensions;
+	
+	let x_third_duplication = correct_or_duplicate_entity(
+		commands,
+		transform,
+		collider,
+		fake_entities,
+		&texture,
+		&component,
+		velocity_result,
+		"x",
+		screen_right_limit, screen_left_limit, entity_right_limit, entity_left_limit, entity_right_lenght, entity_left_lenght
+	);
+
+	let mut y_third_duplication = correct_or_duplicate_entity(
+		commands,
+		transform,
+		collider,
+		fake_entities,
+		&texture,
+		&component,
+		velocity_result,
+		"y",
+		screen_top_limit, screen_bottom_limit, entity_top_limit, entity_bottom_limit, entity_top_lenght, entity_bottom_lenght
+	);
+
+	match (x_third_duplication, y_third_duplication) {
+		(Some(x), Some(y)) => {
+			let translation = Vec3::new(x, y, transform.translation.z);
+			spawn_duplicate_entity(commands, transform, collider, fake_entities, &texture, &component, velocity_result, translation);
+		},
+		(None, None) => fake_entities.0 = vec![],
+		_ => () 
+	}
+}
+
+fn extract_xyzw(transform: &Transform) -> (f32, f32, f32, f32) {
+	let Vec3 {x, y, z} = transform.translation;
+	let pos_or_neg_rotation = if transform.rotation.w > 0.0 { 1. } else { -1. };
+	let radian_angle = transform.rotation.z.asin() * 2. * pos_or_neg_rotation;
+	(x, y, z, radian_angle)
+}
+
+fn get_entity_texture_and_type(entity: Entity, game_textures: &Res<GameTextures>, query_player: &Query<&Player>, query_meteor: &Query<&Meteor>) -> (Handle<Image>, EntityType) {
+	let (texture, component) = if let Ok(_) = query_player.get(entity) {
+			(game_textures.player.clone(), EntityType::Player(Player))
+		} else if let Ok(_) = query_meteor.get(entity) {
+			(game_textures.meteor.clone(), EntityType::Meteor(Meteor))
+		} else {
+			panic!("Unknow Entity able to cross the screen")
+		};
+	(texture, component)
+}
+
+fn correct_or_duplicate_entity(
+	commands: &mut Commands,
+	mut transform: &mut Transform,
+	collider: &Collider,
+	fake_entities: &mut FakeEntities,
+	texture: &Handle<Image>,
+	component: &EntityType,
+	velocity_result: Result<&Velocity, QueryEntityError>,
+	axis: &str,
+	screen_limit_a: f32, screen_limit_b: f32, entity_limit_a: f32, entity_limit_b: f32, entity_lenght_a: f32, entity_lenght_b: f32
+) -> Option<f32> {
+	
+	if let Some((new_position, needs_duplication)) = check_overflow_coordinate(screen_limit_a + MARGIN, screen_limit_b - MARGIN, entity_limit_a, entity_limit_b, entity_lenght_a, entity_lenght_b) {
+		if !needs_duplication {
+			
+			match axis {
+				"x" => transform.translation.x = new_position,
+				"y" => transform.translation.y = new_position,
+				_ => panic!("Invalid axys")
+			}
+			
+			None
+		} else {
+			let mut translation = transform.translation;
+
+			match axis {
+				"x" => translation.x = new_position,
+				"y" => translation.y = new_position,
+				_ => panic!("Invalid axys")
+			} 
+	
+			spawn_duplicate_entity(commands, transform, collider, fake_entities, texture, component, velocity_result, translation);
+			
+			Some(new_position)
+		}
+	} else {
+		None
+	}
+}
+
+fn spawn_duplicate_entity(
+	commands: &mut Commands,
+	transform: &mut Transform,
+	collider: &Collider,
+	fake_entities: &mut FakeEntities,
+	texture: &Handle<Image>,
+	component: &EntityType,
+	velocity_result: Result<&Velocity, QueryEntityError>,
+	translation: Vec3
+) {
+	let fake_entity = commands
+		.spawn(SpriteBundle {
+			texture: texture.clone(),
+			transform: Transform {
+				translation,
+				rotation: transform.rotation,
+				scale: transform.scale
+			},
+			..Default::default()
+		})
+		.insert(collider.clone())
+		.insert(RigidBody::Dynamic)
+		.insert(ActiveEvents::CONTACT_FORCE_EVENTS)
+		.insert(Fake)
+		.id();
+
+	match component.clone() {
+		EntityType::Player(player) => {
+			commands.entity(fake_entity).insert(player);
+		}
+		EntityType::Meteor(meteor) => {
+			commands.entity(fake_entity).insert(meteor);
+		},
+		_ => panic!()
+	}
+
+	if let Ok(velocity) = velocity_result {
+		commands.entity(fake_entity).insert(velocity.clone());
+	}
+
+	fake_entities.0.push(fake_entity);
 }
 
 fn get_bundle_dimensions(collider: &Collider, x_position: f32, y_position: f32, radian_angle: f32, rotation: Quat) -> (f32, f32, f32, f32, f32, f32, f32, f32) {
