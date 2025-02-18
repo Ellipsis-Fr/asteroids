@@ -4,6 +4,43 @@ use bevy_rapier2d::prelude::*;
 use super::{components::*, meteor::MeteorDefinition};
 use super::events::*;
 
+
+pub const PLAYER_GROUP: Group = Group::GROUP_1;     // 0b0001
+pub const ENEMY_GROUP: Group = Group::GROUP_2;      // 0b0010
+pub const PROJECTILE_GROUP: Group = Group::GROUP_3; // 0b0100
+pub const METEOR_GROUP: Group = Group::GROUP_4;       // 0b1000
+
+#[derive(Resource)]
+pub struct CollisionGroupConfig {
+    pub player: CollisionGroups,
+    pub enemy: CollisionGroups,
+    pub enemy_sensor: CollisionGroups,
+    pub projectile: CollisionGroups,
+}
+
+impl Default for CollisionGroupConfig {
+    fn default() -> Self {
+        Self {
+            player: CollisionGroups::new(
+                PLAYER_GROUP,
+                ENEMY_GROUP | METEOR_GROUP | PROJECTILE_GROUP,
+            ),
+            enemy: CollisionGroups::new(
+                ENEMY_GROUP,
+                PLAYER_GROUP | METEOR_GROUP | PROJECTILE_GROUP,
+            ),
+            enemy_sensor: CollisionGroups::new(
+                ENEMY_GROUP,
+                PLAYER_GROUP,
+            ),
+            projectile: CollisionGroups::new(
+                PROJECTILE_GROUP,
+                PLAYER_GROUP | ENEMY_GROUP | METEOR_GROUP,
+            ),
+        }
+    }
+}
+
 /// This function handle contacts on duplicated entities to report it on the original entity
 /// 
 /// The contacts come from 'ContactForceEvent' (rapier struct using Bevy Event<T> Trait), added to duplicated entities.

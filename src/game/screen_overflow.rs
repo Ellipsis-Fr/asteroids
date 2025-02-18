@@ -1,4 +1,3 @@
-
 use super::{components::{self, EntityType}, GameTextures, WinSize};
 
 use bevy::{ecs::query::QueryEntityError, prelude::*};
@@ -33,13 +32,14 @@ pub fn correction_screen_overflow_large_entities(
 	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>,
 	game_textures: Res<GameTextures>,
 	query_player: Query<&Player>,
+	query_enemy: Query<&Enemy>,
 	query_meteor: Query<&Meteor>
 ) {
     let screen_limits = (win_size.x_axys_limit, win_size.y_axys_limit);
 	
 	for (entity, mut transform, collider, mut fake_entities) in large_movable_entities_query.iter_mut() {
 		let (x, y, z, radian_angle) = extract_xyzw(&transform);
-		let (texture, component) = get_entity_texture_and_type(entity, &game_textures, &query_player, &query_meteor);
+		let (texture, component) = get_entity_texture_and_type(entity, &game_textures, &query_player, &query_enemy, &query_meteor);
 
 		let velocity_result = large_movable_entities_with_velocity_query.get(entity);
 
@@ -116,9 +116,17 @@ fn extract_xyzw(transform: &Transform) -> (f32, f32, f32, f32) {
 	(x, y, z, radian_angle)
 }
 
-fn get_entity_texture_and_type(entity: Entity, game_textures: &Res<GameTextures>, query_player: &Query<&Player>, query_meteor: &Query<&Meteor>) -> (Handle<Image>, EntityType) {
+fn get_entity_texture_and_type(
+	entity: Entity,
+	game_textures: &Res<GameTextures>,
+	query_player: &Query<&Player>,
+	query_enemy: &Query<&Enemy>,
+	query_meteor: &Query<&Meteor>
+) -> (Handle<Image>, EntityType) {
 	let (texture, component) = if let Ok(_) = query_player.get(entity) {
 			(game_textures.player.clone(), EntityType::Player(Player))
+		} else if let Ok(enemy) = query_enemy.get(entity) {
+			(game_textures.enemy.clone(), EntityType::Enemy(enemy.clone()))
 		} else if let Ok(_) = query_meteor.get(entity) {
 			(game_textures.meteor.clone(), EntityType::Meteor(Meteor))
 		} else {
@@ -196,6 +204,9 @@ fn spawn_duplicate_entity(
 	match component.clone() {
 		EntityType::Player(player) => {
 			commands.entity(fake_entity).insert(player);
+		},
+		EntityType::Enemy(enemy) => {
+			commands.entity(fake_entity).insert(enemy);
 		}
 		EntityType::Meteor(meteor) => {
 			commands.entity(fake_entity).insert(meteor);
@@ -240,9 +251,7 @@ fn get_bundle_dimensions(collider: &Collider, x_position: f32, y_position: f32, 
 			
 			let (left_limit, right_limit) = (-1. * new_x + x_position, 1. * new_x + x_position);
 			let (bottom_limit, top_limit) = (-1. * new_y + y_position, 1. * new_y + y_position);
-			// dbg!((data_save.0, data_save.0.to_degrees(), radian_angle, radian_angle.to_degrees(), new_theta_1, new_theta_1.to_degrees()));
-			// dbg!((x_position, y_position, left_limit, right_limit, bottom_limit, top_limit));
-			// dbg!((new_x, new_x_1, new_x_2, new_y, new_y_1, new_y_2));
+
 			(left_limit, right_limit, new_x, new_x, bottom_limit, top_limit, new_y, new_y)
 		},
 		_ if collider.as_triangle().is_some() => {
@@ -319,4 +328,72 @@ fn check_overflow_coordinate(screen_limit_a: f32, screen_limit_b: f32, entity_li
 	} else {
 		None
 	}
+}
+
+fn check_wrapped_position(
+    entity_1_position: Vec3,
+    entity_2_position: Vec3,
+    current_coord: f32,
+    screen_limit_a: f32,
+    screen_limit_b: f32,
+    is_x_axis: bool,
+) -> (f32, f32) {
+    let new_coord = if current_coord < 0. {
+        screen_limit_a + (current_coord - screen_limit_b)
+    } else {
+        screen_limit_b + (current_coord - screen_limit_a)
+    };
+
+    let test_position = if is_x_axis {
+        Vec3::new(new_coord, entity_2_position.y, entity_2_position.z)
+    } else {
+        Vec3::new(entity_2_position.x, new_coord, entity_2_position.z)
+    };
+
+    let new_distance = entity_1_position.distance(test_position);
+    (new_coord, new_distance)
+}
+
+pub fn get_nearest_position(win_size: &Res<WinSize>, entity_1_position: Vec3, entity_2_position: Vec3) -> Vec3 {
+    let (screen_left_limit, screen_right_limit) = win_size.x_axys_limit;
+    let (screen_bottom_limit, screen_top_limit) = win_size.y_axys_limit;
+
+    let mut distance = entity_1_position.distance(entity_2_position);
+    let mut nearest_entity_2_position = entity_2_position;
+
+    // Check X-axis wrapping
+    let (new_x, x_distance) = check_wrapped_position(
+        entity_1_position,
+        entity_2_position,
+        entity_2_position.x,
+        screen_right_limit,
+        screen_left_limit,
+        true,
+    );
+    if x_distance < distance {
+        distance = x_distance;
+        nearest_entity_2_position = Vec3::new(new_x, entity_2_position.y, entity_2_position.z);
+    }
+
+    // Check Y-axis wrapping
+    let (new_y, y_distance) = check_wrapped_position(
+        entity_1_position,
+        entity_2_position,
+        entity_2_position.y,
+        screen_top_limit,
+        screen_bottom_limit,
+        false,
+    );
+    if y_distance < distance {
+        distance = y_distance;
+        nearest_entity_2_position = Vec3::new(entity_2_position.x, new_y, entity_2_position.z);
+    }
+
+    // Check diagonal wrapping
+    let diagonal_distance = entity_1_position.distance(Vec3::new(new_x, new_y, entity_2_position.z));
+    if diagonal_distance < distance {
+        nearest_entity_2_position = Vec3::new(new_x, new_y, entity_2_position.z);
+    }
+
+    nearest_entity_2_position
 }

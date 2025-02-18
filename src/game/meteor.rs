@@ -51,7 +51,7 @@ fn meteor_spawn_system(
     mut wave_resource: ResMut<Wave>,
     game_textures: Res<GameTextures>
 ) {
-    let meteor_to_spawn = get_meteor_definition_mapped(&win_size, wave_resource.get_meteors().pop().unwrap());
+    let meteor_to_spawn = get_meteor_definition_mapped(&win_size, wave_resource.get_meteors_mut().pop().unwrap());
     spawn_meteor(&mut commands, &game_textures, meteor_to_spawn);
 }
 

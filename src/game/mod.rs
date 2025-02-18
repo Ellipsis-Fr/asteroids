@@ -1,5 +1,6 @@
 #![allow(unused)]
 mod player;
+mod enemy;
 mod meteor;
 mod fragment;
 mod tech_details;
@@ -14,10 +15,12 @@ use std::collections::HashSet;
 
 use bevy::{core::FrameCount, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, ecs::entity, input::gamepad::{self, ButtonSettingsError}, math::Vec3Swizzles, prelude::*, sprite::MaterialMesh2dBundle, window::{self, PresentMode, PrimaryWindow, WindowTheme}};
 use bevy_rapier2d::{plugin::RapierConfiguration, prelude::{ Collider, ColliderMassProperties, CollisionEvent, ContactForceEvent, ExternalForce, KinematicCharacterController, RigidBody, Velocity }};
+use collision::CollisionGroupConfig;
 use components::{Direction, Enemy, Explosion, ExplosionTimer, ExplosionToSpawn, Fake, FakeEntities, FromEnemy, FromPlayer, Laser, LaserTimer, LifeTime, Meteor, MeteorLevel, Player, RocketDragTimer, RocketFire, Spark};
 use events::{FragmentEvent, MeteorDestructionEvent};
 use fragment::FragmentPlugin;
 use player::PlayerPlugin;
+use enemy::EnemyPlugin;
 use tech_details::TechDetailsPlugin;
 use meteor::{MeteorDefinition, MeteorPlugin};
 use wave::Wave;
@@ -28,6 +31,9 @@ use wave::Wave;
 
 const PLAYER_SPRITE: &str = "spaceShips.png";
 const PLAYER_SIZE: (f32, f32) = (136., 84.);
+
+const ENEMY_SPRITE: &str = "spaceShips.png";
+const ENEMY_SIZE: (f32, f32) = (136., 84.);
 
 const LASER_SPRITE: &str = "laser.png";
 const LASER_SIZE: (f32, f32) = (9., 54.);
@@ -71,6 +77,7 @@ impl WinSize {
 #[derive(Resource)]
 struct GameTextures {
 	player: Handle<Image>,
+	enemy: Handle<Image>,
 	laser: Handle<Image>,
 	rocket_fire: Handle<Image>,
 	meteor: Handle<Image>,
@@ -87,6 +94,7 @@ impl Plugin for GamePlugin {
 		.add_event::<MeteorDestructionEvent>()
 		.add_event::<FragmentEvent>()
         .add_plugins(PlayerPlugin)
+		.add_plugins(EnemyPlugin)
         .add_plugins(MeteorPlugin)
         .add_plugins(FragmentPlugin)
 		.add_plugins(TechDetailsPlugin(env::var("ACTIVE_TECH_DETAIL").unwrap_or("false".to_string()) == "true"))
@@ -119,11 +127,14 @@ fn setup_system(
 	// add GameTextures resource
 	let game_textures = GameTextures { 
 		player: asset_server.load(PLAYER_SPRITE),
+		enemy: asset_server.load(ENEMY_SPRITE),
 		laser: asset_server.load(LASER_SPRITE),
 		rocket_fire: asset_server.load(ROCKET_FIRE_SPRITE),
 		meteor: asset_server.load(METEOR_SPRITE)
 	 };
 	commands.insert_resource(game_textures);
+
+	commands.insert_resource(CollisionGroupConfig::default());
 
 	// cancel gravity effect
     rapier_configuration.gravity = Vec2::new(0., 0.);
@@ -151,6 +162,7 @@ fn correction_screen_overflow_system(
 	large_movable_entities_with_velocity_query: Query<&Velocity, (With<FakeEntities>, Without<Fake>)>,
 	game_textures: Res<GameTextures>,
 	query_player: Query<&Player>,
+	query_enemy: Query<&Enemy>,
 	query_meteor: Query<&Meteor>
 ) {
     screen_overflow::correction_screen_overflow_small_entities(&win_size, small_movable_entities_query);
@@ -162,6 +174,7 @@ fn correction_screen_overflow_system(
 		large_movable_entities_with_velocity_query,
 		game_textures,
 		query_player,
+		query_enemy,
 		query_meteor
 	);
 }

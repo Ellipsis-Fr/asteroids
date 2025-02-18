@@ -62,22 +62,35 @@ fn player_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>)
 fn player_rotation_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&mut Acceleration, &mut Direction), With<Player>>) {
     if let Ok((mut acceleration, mut rotation)) = query.get_single_mut() {
         if kb.pressed(KeyCode::ArrowLeft) {
-            rotation.rotate(0.5);
-            acceleration.stop();
+            // rotation.rotate(0.5);
+            // acceleration.stop();
         } else if kb.pressed(KeyCode::ArrowRight) {
-            rotation.rotate(-0.5);
-            acceleration.stop();
+            // rotation.rotate(-0.5);
+            // acceleration.stop();
         }
     }    
 }
 
 fn player_acceleration_event_system(kb: Res<ButtonInput<KeyCode>>, mut query: Query<(&Transform, &mut Acceleration, &Direction), With<Player>>) {
     if let Ok((transform, mut acceleration, direction)) = query.get_single_mut() {
+        // if kb.pressed(KeyCode::ArrowUp) {
+        //     acceleration.accelerate();
+        //     acceleration.calculate_translation(&direction.rotation_angle_degrees);
+        // } else {
+        //     acceleration.stop();
+        // }
         if kb.pressed(KeyCode::ArrowUp) {
-            acceleration.accelerate();
+            acceleration.y = 1.;
+        } else if kb.pressed(KeyCode::ArrowDown) {
+            acceleration.y = -1.;
+        } else if kb.pressed(KeyCode::ArrowLeft) {
+            acceleration.x = -1.;
             acceleration.calculate_translation(&direction.rotation_angle_degrees);
+        } else if kb.pressed(KeyCode::ArrowRight) {
+            acceleration.x = 1.;
         } else {
-            acceleration.stop();
+            acceleration.x = 0.;
+            acceleration.y = 0.;
         }
     }    
 }

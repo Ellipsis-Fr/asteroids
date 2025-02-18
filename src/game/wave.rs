@@ -67,11 +67,19 @@ impl Wave {
         !self.meteors.is_empty()
     }
 
-    pub fn get_meteors(&mut self) -> &mut Vec<MeteorDefinition> {
+    pub fn get_meteors_mut(&mut self) -> &mut Vec<MeteorDefinition> {
         &mut self.meteors
     }
 
-    pub fn get_enemies(&mut self) -> &mut i32 {
-        &mut self.enemies
+    pub fn get_meteors(&self) -> &Vec<MeteorDefinition> {
+        &self.meteors
+    }
+
+    pub fn get_enemies(&self) -> i32 {
+        self.enemies
+    }
+
+    pub fn decrease_enemies(&mut self) {
+        self.enemies -= 1;
     }
 }

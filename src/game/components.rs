@@ -11,6 +11,7 @@ use rand::{random, Rng};
 #[derive(Clone)]
 pub enum EntityType {
     Player(Player),
+    Enemy(Enemy),
     Meteor(Meteor),
     Laser(Laser)
 }
@@ -117,8 +118,27 @@ pub struct FromPlayer;
 // endregion: --- Player Component
 
 // region:    --- Enemy Component
+#[derive(Component, Clone)]
+pub struct Enemy {
+    pub speed: f32,
+    pub detection_range: f32,
+    pub attack_range: f32,
+    pub health: f32,
+}
+
 #[derive(Component)]
-pub struct Enemy;
+pub struct AIState {
+    pub state: EnemyState,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum EnemyState {
+    Idle,
+    Dodge,
+    Patrol,
+    Chase,
+    Attack,
+}
 
 #[derive(Component)]
 pub struct FromEnemy;
@@ -189,3 +209,7 @@ pub struct MeteorLevel(pub u8);
 #[derive(Component)]
 pub struct MeteorState(u8);
 // endregion: --- Meteor Component
+
+// Component to mark detection sensors
+#[derive(Component)]
+pub struct DetectionSensor;
