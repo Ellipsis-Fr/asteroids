@@ -129,32 +129,18 @@ fn enemy_movement_system(
                     let direction = (nearest_position - enemy_transform.translation).normalize();
 
                     let enemy_forward = enemy_transform.rotation * Vec3::Y; // This gets the forward vector based on rotation
-                    let mut dot_product = enemy_forward.normalize().dot(direction);
-                    if dot_product < 0. {
-                        dbg!(dot_product);
+                    let cross_product = enemy_forward.cross(direction);
+                    
+                    let dot_product = enemy_forward.normalize().dot(direction).clamp(-1., 1.);
+                    let mut angle = dot_product.acos();
+                    if angle > 5_f32.to_radians() {
+                        angle = 5_f32.to_radians();
                     }
                     
-                    if dot_product < -1. {
-                        dot_product = -1.;
-                    } else if dot_product > 1. {
-                        dot_product = 1.;
-                    }
-                    let mut angle_from_dot = dot_product.acos();
-                    if dot_product < 0. && angle_from_dot.to_degrees() > 90. {
-                        angle_from_dot = angle_from_dot - 180_f32.to_radians();
-                    }
-                    dbg!(angle_from_dot.to_degrees());
-                    // dbg!(dot_product);
-                    enemy_transform.rotate(Quat::from_rotation_z(angle_from_dot));
-                    if (angle_from_dot.to_degrees() > -40. && angle_from_dot.to_degrees() < 40.) || (angle_from_dot.to_degrees() > 160. && angle_from_dot.to_degrees() < 180.) {
-                    }
-
-
-                    // enemy_transform.rotation = Quat::from_rotation_z(angle_from_dot);
-
-                    // enemy_transform.rotate_z(angle * -1.);
-                    // enemy_transform.rotate(Quat::from_rotation_z(angle));
-                    // enemy_transform.translation += direction * enemy.speed * time.delta_seconds();
+                    let signed_angle = if cross_product.z < 0.0 { -angle } else { angle };
+                    
+                    enemy_transform.rotate(Quat::from_rotation_z(signed_angle));
+                    enemy_transform.translation += direction * enemy.speed * time.delta_seconds();
                 }
                 EnemyState::Dodge => {
 
