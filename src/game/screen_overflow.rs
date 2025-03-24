@@ -331,8 +331,8 @@ fn check_overflow_coordinate(screen_limit_a: f32, screen_limit_b: f32, entity_li
 }
 
 fn check_wrapped_position(
-    entity_1_position: Vec3,
-    entity_2_position: Vec3,
+    source_pos: Vec3,
+    target_pos: Vec3,
     current_coord: f32,
     screen_limit_a: f32,
     screen_limit_b: f32,
@@ -345,55 +345,55 @@ fn check_wrapped_position(
     };
 
     let test_position = if is_x_axis {
-        Vec3::new(new_coord, entity_2_position.y, entity_2_position.z)
+        Vec3::new(new_coord, target_pos.y, target_pos.z)
     } else {
-        Vec3::new(entity_2_position.x, new_coord, entity_2_position.z)
+        Vec3::new(target_pos.x, new_coord, target_pos.z)
     };
 
-    let new_distance = entity_1_position.distance(test_position);
+    let new_distance = source_pos.distance(test_position);
     (new_coord, new_distance)
 }
 
-pub fn get_nearest_position(win_size: &Res<WinSize>, entity_1_position: Vec3, entity_2_position: Vec3) -> Vec3 {
+pub fn get_nearest_position(win_size: &Res<WinSize>, source_pos: Vec3, target_pos: Vec3) -> Vec3 {
     let (screen_left_limit, screen_right_limit) = win_size.x_axys_limit;
     let (screen_bottom_limit, screen_top_limit) = win_size.y_axys_limit;
 
-    let mut distance = entity_1_position.distance(entity_2_position);
-    let mut nearest_entity_2_position = entity_2_position;
+    let mut min_distance = source_pos.distance(target_pos);
+    let mut nearest_pos = target_pos;
 
     // Check X-axis wrapping
-    let (new_x, x_distance) = check_wrapped_position(
-        entity_1_position,
-        entity_2_position,
-        entity_2_position.x,
+    let (new_x, distance_x) = check_wrapped_position(
+        source_pos,
+        target_pos,
+        target_pos.x,
         screen_right_limit,
         screen_left_limit,
         true,
     );
-    if x_distance < distance {
-        distance = x_distance;
-        nearest_entity_2_position = Vec3::new(new_x, entity_2_position.y, entity_2_position.z);
+    if distance_x < min_distance {
+        min_distance = distance_x;
+        nearest_pos = Vec3::new(new_x, target_pos.y, target_pos.z);
     }
 
     // Check Y-axis wrapping
-    let (new_y, y_distance) = check_wrapped_position(
-        entity_1_position,
-        entity_2_position,
-        entity_2_position.y,
+    let (new_y, distance_y) = check_wrapped_position(
+        source_pos,
+        target_pos,
+        target_pos.y,
         screen_top_limit,
         screen_bottom_limit,
         false,
     );
-    if y_distance < distance {
-        distance = y_distance;
-        nearest_entity_2_position = Vec3::new(entity_2_position.x, new_y, entity_2_position.z);
+    if distance_y < min_distance {
+        min_distance = distance_y;
+        nearest_pos = Vec3::new(target_pos.x, new_y, target_pos.z);
     }
 
     // Check diagonal wrapping
-    let diagonal_distance = entity_1_position.distance(Vec3::new(new_x, new_y, entity_2_position.z));
-    if diagonal_distance < distance {
-        nearest_entity_2_position = Vec3::new(new_x, new_y, entity_2_position.z);
+    let diagonal_distance = source_pos.distance(Vec3::new(new_x, new_y, target_pos.z));
+    if diagonal_distance < min_distance {
+        nearest_pos = Vec3::new(new_x, new_y, target_pos.z);
     }
 
-    nearest_entity_2_position
+    nearest_pos
 }

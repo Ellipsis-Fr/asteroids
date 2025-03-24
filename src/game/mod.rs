@@ -225,3 +225,14 @@ fn remove_fake_entities_system(mut commands: Commands, query_fake_entities: Quer
 		commands.entity(entity).despawn();
 	}
 }
+
+// Kept just for check
+// fn test_next_position_system(time: Res<Time>, query_projectiles: Query<(Entity, &Transform, &Velocity, &Collider)>) {
+// 	for (projectile_entity, projectile_transform, projectile_velocity, projectile_collider) in query_projectiles.iter() {
+// 		let projectile_actual_position = projectile_transform.translation.truncate();
+// 		let projectile_futur_position = projectile_transform.translation + projectile_velocity.linvel.extend(0.) * time.delta_seconds();
+
+// 		dbg!((time.delta_seconds(), projectile_actual_position, projectile_futur_position.truncate()));
+		
+// 	}
+// }
