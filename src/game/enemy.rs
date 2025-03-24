@@ -10,6 +10,7 @@ struct Threat {
     position: Vec3,
     distance: f32,
     dot_product: f32,
+    collider: Collider
 }
 
 #[derive(Default)]
@@ -28,8 +29,6 @@ impl Plugin for EnemyPlugin {
         app.init_resource::<DetectedThreatsByEnemies>()
             .add_systems(Update, (
                 enemy_spawn_system.run_if(can_spawn_enemy),
-                // enemy_detection_system,
-                // enemy_ai_system.after(enemy_detection_system),
                 enemy_ai_system,
                 enemy_movement_system,
             )
@@ -92,115 +91,123 @@ fn enemy_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>, 
     });
 }
 
-fn enemy_detection_system(
+fn enemy_ai_system(
     win_size: Res<WinSize>,
     time: Res<Time>,
     mut detected_threats_by_enemies: ResMut<DetectedThreatsByEnemies>,
-    mut query_enemies: Query<(Entity, &Enemy, &Transform, &mut AIState, &Collider)>,
-    query_projectiles: Query<(Entity, &Transform, &Velocity, &Collider)>,
+    mut enemy_query: Query<(Entity, &Enemy, &Transform, &Collider, &mut AIState)>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    query_projectiles: Query<(Entity, &Transform, &Velocity, &Collider), Without<Player>>,
 ) {
-    detected_threats_by_enemies.0.clear();
+    if let Ok(player_transform) = player_query.get_single() {
+        detected_threats_by_enemies.0.clear();
 
-    for (enemy_entity, enemy_struct, enemy_transform, mut ai_state, enemy_collider) in query_enemies.iter_mut() {
-        
-        let mut detected_threats = DetectedThreats::default();
-
-        let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
-        let enemy_futur_position = enemy_transform.translation + enemy_direction * enemy_struct.speed * time.delta_seconds();
-
-        for (projectile_entity, projectile_transform, projectile_velocity, projectile_collider) in query_projectiles.iter() {
-            if (enemy_entity == projectile_entity) { continue }
-            
-            let projectile_nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, projectile_transform.translation);
-            let to_projectile = projectile_nearest_position - enemy_transform.translation;
-            let actual_distance = to_projectile.length();
-
-            if actual_distance > 500. { continue }
-            else {
-                let projectile_direction = projectile_velocity.linvel.extend(0.0).normalize();
-
-                // ajouter ici pour calcul ensuite :
-                // - calcul position projectile en direction du vaisseau avec time
-                let projectile_futur_position = projectile_transform.translation + projectile_velocity.linvel.extend(0.) * time.delta_seconds();
-                let projectile_futur_position_nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, projectile_futur_position);
-                let to_projectile_futur_position_without_enemy_moving = projectile_futur_position_nearest_position - enemy_transform.translation;
-                let futur_distance_without_enemy_moving = to_projectile_futur_position_without_enemy_moving.length();
-                let to_projectile_futur_position_with_enemy_moving = projectile_futur_position_nearest_position - enemy_futur_position;
-                let futur_distance_with_enemy_moving = to_projectile_futur_position_with_enemy_moving.length();
-
-                let dot_product_actual_position = projectile_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
-                let dot_product_futur_position_without_enemy_moving = projectile_direction.dot(to_projectile_futur_position_without_enemy_moving.normalize()).clamp(-1., 1.);
-                let dot_product_futur_position_with_enemy_moving = projectile_direction.dot(to_projectile_futur_position_with_enemy_moving.normalize()).clamp(-1., 1.);
-
-                if actual_distance > 300. {
-                    //todo: calcul pour vérifier si la rotation du vaisseau ne risque pas d'entrer en colision, si pas de risque alors on peut continuer à vérifier condition pour ne pas tenir compte de ce projectile
-                    if true {
-                        if dot_product_actual_position <= 0. {
-                            if actual_distance < futur_distance_without_enemy_moving && actual_distance < futur_distance_with_enemy_moving { continue }
-                        } else {
-                            if dot_product_actual_position > dot_product_futur_position_without_enemy_moving && dot_product_actual_position > dot_product_futur_position_with_enemy_moving { continue }
-                        }
-                    }
-
-                }
-
-                detected_threats.threats_in_current_position.insert(
-                    projectile_entity,
-                    Threat {
-                        position: projectile_nearest_position,
-                        distance: actual_distance,
-                        dot_product: dot_product_actual_position 
-                    }
-                );
-
-                detected_threats.threats_in_futur_position.insert(
-                    projectile_entity,
-                    Threat {
-                        position: projectile_futur_position_nearest_position,
-                        distance: futur_distance_without_enemy_moving,
-                        dot_product: dot_product_futur_position_without_enemy_moving 
-                    }
-                );
-                
-            
-                // calcul secondaire :
-                // - déterminer avec leur collider, et rotation, respectifs s'il peut y avoir un choc (se baser sur solutions rapier si possible)
-                // - si oui alors même si le dot_product est < 0. on conservera ce risque
-                // - si non alors c'est le dot_product qui jugera s'il faut ou non conserver ces informations
+        for (enemy_entity, enemy, enemy_transform, enemy_collider, mut ai_state) in enemy_query.iter_mut() {
+            if let Some(detected_threats) = detect_threats(&win_size, &time, (enemy_entity, enemy, enemy_transform, enemy_collider), query_projectiles.iter().collect()) {
+                ai_state.state = EnemyState::Dodge;
+                detected_threats_by_enemies.0.insert(enemy_entity.clone(), detected_threats);
+                continue;
+            } else {
+                let nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, player_transform.translation);
+                let distance = enemy_transform.translation.distance(nearest_position);
+                // there caution to take in account the screen limit
+                // I will need it to Chase and Attack action (allow enemy fire to pass trougth the screen)
+    
+                // Update AI state based on distance to player
+                ai_state.state = if distance <= enemy.attack_range {
+                    EnemyState::Attack
+                } else if distance <= enemy.detection_range {
+                    EnemyState::Chase
+                } else {
+                    EnemyState::Patrol
+                };
             }
-        }
-
-        if !detected_threats.threats_in_current_position.is_empty() {
-            ai_state.state = EnemyState::Dodge;
-            detected_threats_by_enemies.0.insert(enemy_entity.clone(), detected_threats);
         }
     }
 }
 
-fn enemy_ai_system(
-    win_size: Res<WinSize>,
-    mut enemy_query: Query<(&Transform, &Enemy, &mut AIState)>,
-    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>
-) {
-    if let Ok(player_transform) = player_query.get_single() {
-        for (enemy_transform, enemy, mut ai_state) in enemy_query.iter_mut() {
-            let nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, player_transform.translation);
-            let distance = enemy_transform.translation.distance(nearest_position);
-            // there caution to take in account the screen limit
-            // I will need it to Chase and Attack action (allow enemy fire to pass trougth the screen)
+fn detect_threats(
+    win_size: &Res<WinSize>,
+    time: &Res<Time>,
+    enemy_information: (Entity, &Enemy, &Transform, &Collider),
+    query_projectiles: Vec<(Entity, &Transform, &Velocity, &Collider)>,
+) -> Option<DetectedThreats> {
+    let mut has_to_dodge = false;
+    let (enemy_entity, enemy_struct, enemy_transform, enemy_collider) = enemy_information;
 
-            if ai_state.state == EnemyState::Dodge {
-                continue;
+    let mut detected_threats = DetectedThreats::default();
+
+    let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
+    let enemy_futur_position = enemy_transform.translation + enemy_direction * enemy_struct.speed * time.delta_seconds();
+
+    for (projectile_entity, projectile_transform, projectile_velocity, projectile_collider) in query_projectiles {
+        if (enemy_entity == projectile_entity) { continue }
+        
+        let projectile_nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, projectile_transform.translation);
+        let to_projectile = projectile_nearest_position - enemy_transform.translation;
+        let actual_distance = to_projectile.length();
+
+        if actual_distance > 250. { continue }
+        else {
+            let projectile_direction = projectile_velocity.linvel.extend(0.0).normalize();
+
+            // ajouter ici pour calcul ensuite :
+            // - calcul position projectile en direction du vaisseau avec time
+            let projectile_futur_position = projectile_transform.translation + projectile_velocity.linvel.extend(0.) * time.delta_seconds();
+            let projectile_futur_position_nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, projectile_futur_position);
+            let to_projectile_futur_position_without_enemy_moving = projectile_futur_position_nearest_position - enemy_transform.translation;
+            let futur_distance_without_enemy_moving = to_projectile_futur_position_without_enemy_moving.length();
+            let to_projectile_futur_position_with_enemy_moving = projectile_futur_position_nearest_position - enemy_futur_position;
+            let futur_distance_with_enemy_moving = to_projectile_futur_position_with_enemy_moving.length();
+
+            let dot_product_actual_position = projectile_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
+            let dot_product_futur_position_without_enemy_moving = projectile_direction.dot(to_projectile_futur_position_without_enemy_moving.normalize()).clamp(-1., 1.);
+            let dot_product_futur_position_with_enemy_moving = projectile_direction.dot(to_projectile_futur_position_with_enemy_moving.normalize()).clamp(-1., 1.);
+
+            if actual_distance > 150. {
+                //todo: calcul pour vérifier si la rotation du vaisseau ne risque pas d'entrer en colision, si pas de risque alors on peut continuer à vérifier condition pour ne pas tenir compte de ce projectile
+                if true {
+                    if dot_product_actual_position <= 0. {
+                        if actual_distance < futur_distance_without_enemy_moving && actual_distance < futur_distance_with_enemy_moving { continue }
+                    } else {
+                        if dot_product_actual_position > dot_product_futur_position_without_enemy_moving && dot_product_actual_position > dot_product_futur_position_with_enemy_moving { continue }
+                    }
+                }
+
             }
-            // Update AI state based on distance to player
-            ai_state.state = if distance <= enemy.attack_range {
-                EnemyState::Attack
-            } else if distance <= enemy.detection_range {
-                EnemyState::Idle
-            } else {
-                EnemyState::Patrol
-            };
+
+            detected_threats.threats_in_current_position.insert(
+                projectile_entity,
+                Threat {
+                    position: projectile_nearest_position,
+                    distance: actual_distance,
+                    dot_product: dot_product_actual_position,
+                    collider: projectile_collider.clone()
+                }
+            );
+
+            detected_threats.threats_in_futur_position.insert(
+                projectile_entity,
+                Threat {
+                    position: projectile_futur_position_nearest_position,
+                    distance: futur_distance_without_enemy_moving,
+                    dot_product: dot_product_futur_position_without_enemy_moving,
+                    collider: projectile_collider.clone()
+                }
+            );
+            
+        
+            // calcul secondaire :
+            // - déterminer avec leur collider, et rotation, respectifs s'il peut y avoir un choc (se baser sur solutions rapier si possible)
+            // - si oui alors même si le dot_product est < 0. on conservera ce risque
+            // - si non alors c'est le dot_product qui jugera s'il faut ou non conserver ces informations
         }
+    }
+
+    if !detected_threats.threats_in_current_position.is_empty() {
+        Some(detected_threats)   
+    } else {
+        None
     }
 }
 
@@ -208,8 +215,9 @@ fn enemy_ai_system(
 fn enemy_movement_system(
     win_size: Res<WinSize>,
     time: Res<Time>,
+    mut detected_threats_by_enemies: ResMut<DetectedThreatsByEnemies>,
     mut enemy_query: Query<(&mut Transform, &Enemy, &AIState)>,
-    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>
 ) {
     if let Ok(player_transform) = player_query.get_single() {
         for (mut enemy_transform, enemy, ai_state) in enemy_query.iter_mut() {
