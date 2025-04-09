@@ -1,15 +1,25 @@
-use std::{collections::{BTreeMap, HashMap}, ops::Sub};
+use std::{collections::{BTreeMap, HashMap}, ops::Sub, time::Instant};
 
 use bevy::prelude::*;
 use bevy_rapier2d::{na::Rotation, prelude::*};
 
 use super::{components::{AIState, DetectionSensor, Enemy, EnemyState, FakeEntities, Meteor, Player}, screen_overflow, wave::Wave, GameTextures, WinSize, ENEMY_SIZE, SPRITE_SCALE};
 
+const DODGE_ACCURACY: f32 = 4.;
+
+#[derive(Debug, PartialEq)]
+enum DodgeStatus {
+    Free,
+    MustMove,
+    CriticalShoot
+}
+
 #[derive(Debug)]
 struct Threat {
     position: Vec3,
     distance: f32,
-    dot_product: f32,
+    threat_dot_product: f32,        // dot product from threat POV
+    threatened_dot_product: f32,    // dot product from enemy POV
     collider: Collider
 }
 
@@ -31,7 +41,7 @@ impl Plugin for EnemyPlugin {
                 enemy_spawn_system.run_if(can_spawn_enemy),
                 enemy_ai_system,
                 enemy_movement_system,
-            )
+            ).chain()
         );
     }
 }
@@ -61,9 +71,10 @@ fn enemy_spawn_system(mut commands: Commands, game_textures: Res<GameTextures>, 
         },
         Enemy {
             speed: 100.,
-            detection_range: 500.,
-            attack_range: 150.,
-            health: 100.0,
+            detection_range: 600.,
+            attack_range: 250.,
+            health: 100.,
+            last_shot_instant: Instant::now()
         },
         AIState {
             state: EnemyState::Idle,
@@ -106,7 +117,6 @@ fn enemy_ai_system(
             if let Some(detected_threats) = detect_threats(&win_size, &time, (enemy_entity, enemy, enemy_transform, enemy_collider), query_projectiles.iter().collect()) {
                 ai_state.state = EnemyState::Dodge;
                 detected_threats_by_enemies.0.insert(enemy_entity.clone(), detected_threats);
-                continue;
             } else {
                 let nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, player_transform.translation);
                 let distance = enemy_transform.translation.distance(nearest_position);
@@ -132,11 +142,9 @@ fn detect_threats(
     enemy_information: (Entity, &Enemy, &Transform, &Collider),
     query_projectiles: Vec<(Entity, &Transform, &Velocity, &Collider)>,
 ) -> Option<DetectedThreats> {
-    let mut has_to_dodge = false;
-    let (enemy_entity, enemy_struct, enemy_transform, enemy_collider) = enemy_information;
-
     let mut detected_threats = DetectedThreats::default();
-
+    
+    let (enemy_entity, enemy_struct, enemy_transform, enemy_collider) = enemy_information;
     let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
     let enemy_futur_position = enemy_transform.translation + enemy_direction * enemy_struct.speed * time.delta_seconds();
 
@@ -160,20 +168,19 @@ fn detect_threats(
             let to_projectile_futur_position_with_enemy_moving = projectile_futur_position_nearest_position - enemy_futur_position;
             let futur_distance_with_enemy_moving = to_projectile_futur_position_with_enemy_moving.length();
 
-            let dot_product_actual_position = projectile_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
-            let dot_product_futur_position_without_enemy_moving = projectile_direction.dot(to_projectile_futur_position_without_enemy_moving.normalize()).clamp(-1., 1.);
-            let dot_product_futur_position_with_enemy_moving = projectile_direction.dot(to_projectile_futur_position_with_enemy_moving.normalize()).clamp(-1., 1.);
+            let projectile_dot_product_actual_position = projectile_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
+            let projectile_dot_product_futur_position_without_enemy_moving = projectile_direction.dot(to_projectile_futur_position_without_enemy_moving.normalize()).clamp(-1., 1.);
+            let projectile_dot_product_futur_position_with_enemy_moving = projectile_direction.dot(to_projectile_futur_position_with_enemy_moving.normalize()).clamp(-1., 1.);
 
             if actual_distance > 150. {
                 //todo: calcul pour vérifier si la rotation du vaisseau ne risque pas d'entrer en colision, si pas de risque alors on peut continuer à vérifier condition pour ne pas tenir compte de ce projectile
                 if true {
-                    if dot_product_actual_position <= 0. {
+                    if projectile_dot_product_actual_position <= 0. {
                         if actual_distance < futur_distance_without_enemy_moving && actual_distance < futur_distance_with_enemy_moving { continue }
                     } else {
-                        if dot_product_actual_position > dot_product_futur_position_without_enemy_moving && dot_product_actual_position > dot_product_futur_position_with_enemy_moving { continue }
+                        if projectile_dot_product_actual_position > projectile_dot_product_futur_position_without_enemy_moving && projectile_dot_product_actual_position > projectile_dot_product_futur_position_with_enemy_moving { continue }
                     }
                 }
-
             }
 
             detected_threats.threats_in_current_position.insert(
@@ -181,7 +188,8 @@ fn detect_threats(
                 Threat {
                     position: projectile_nearest_position,
                     distance: actual_distance,
-                    dot_product: dot_product_actual_position,
+                    threat_dot_product: projectile_dot_product_actual_position,
+                    threatened_dot_product: enemy_direction.dot(to_projectile.normalize()).clamp(-1., 1.),
                     collider: projectile_collider.clone()
                 }
             );
@@ -191,7 +199,8 @@ fn detect_threats(
                 Threat {
                     position: projectile_futur_position_nearest_position,
                     distance: futur_distance_without_enemy_moving,
-                    dot_product: dot_product_futur_position_without_enemy_moving,
+                    threat_dot_product: projectile_dot_product_futur_position_without_enemy_moving,
+                    threatened_dot_product: enemy_direction.dot(to_projectile_futur_position_without_enemy_moving.normalize()).clamp(-1., 1.),
                     collider: projectile_collider.clone()
                 }
             );
@@ -222,25 +231,9 @@ fn enemy_movement_system(
     if let Ok(player_transform) = player_query.get_single() {
         for (mut enemy_transform, enemy, ai_state) in enemy_query.iter_mut() {
             match ai_state.state {
-                EnemyState::Chase => {
-                    // Move towards player
-                    let nearest_position = screen_overflow::get_nearest_position(&win_size, enemy_transform.translation, player_transform.translation);
-                    let direction = (nearest_position - enemy_transform.translation).normalize();
-
-                    let enemy_forward = enemy_transform.rotation * Vec3::Y; // This gets the forward vector based on rotation
-                    let cross_product = enemy_forward.cross(direction);
-                    
-                    let dot_product = enemy_forward.normalize().dot(direction).clamp(-1., 1.);
-                    let mut angle = dot_product.acos().clamp(0., 10_f32.to_radians());
-                    
-                    let signed_angle = if cross_product.z < 0.0 { -angle } else { angle };
-                    
-                    enemy_transform.rotate(Quat::from_rotation_z(signed_angle));
-                    // todo: edit translation according to the angle
-                    enemy_transform.translation += direction * enemy.speed * time.delta_seconds();
-                }
+                EnemyState::Chase => chase(&win_size, &time, &mut enemy_transform, enemy, player_transform),
                 EnemyState::Dodge => {
-
+                    
                 }
                 EnemyState::Patrol => {
                     // Implement patrol behavior (e.g., moving in a pattern)
@@ -258,4 +251,23 @@ fn enemy_movement_system(
             }
         }
     }
+}
+
+fn chase(win_size: &Res<WinSize>, time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy: &Enemy, player_transform: &Transform) {
+    // Move towards player
+    let nearest_position = screen_overflow::get_nearest_position(win_size, enemy_transform.translation, player_transform.translation);
+    let direction = (nearest_position - enemy_transform.translation).normalize();
+
+    let enemy_forward = enemy_transform.rotation * Vec3::Y;
+    // This gets the forward vector based on rotation
+    let cross_product = enemy_forward.cross(direction);
+                    
+    let dot_product = enemy_forward.normalize().dot(direction).clamp(-1., 1.);
+    let mut angle = dot_product.acos().clamp(0., 10_f32.to_radians());
+                    
+    let signed_angle = if cross_product.z < 0.0 { -angle } else { angle };
+                    
+    enemy_transform.rotate(Quat::from_rotation_z(signed_angle));
+    // todo: edit translation according to the angle
+    enemy_transform.translation += direction * enemy.speed * time.delta_seconds();
 }

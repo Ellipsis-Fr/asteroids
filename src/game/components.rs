@@ -1,6 +1,6 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, time::Instant};
 
-use bevy::{prelude::{Component, Entity, Vec2, Vec3}, reflect::Reflect, time::{Timer, TimerMode}};
+use bevy::{prelude::{Component, Entity, Vec2, Vec3}, reflect::Reflect, time::{Time, Timer, TimerMode}};
 
 use crate::game::{BASE_SPEED, TIME_STEP};
 
@@ -118,12 +118,21 @@ pub struct FromPlayer;
 // endregion: --- Player Component
 
 // region:    --- Enemy Component
+const TIME_BTW_SHOOT_IN_SECONDS: f32 = 3.;
+
 #[derive(Component, Clone)]
 pub struct Enemy {
     pub speed: f32,
     pub detection_range: f32,
     pub attack_range: f32,
     pub health: f32,
+    pub last_shot_instant: Instant
+}
+
+impl Enemy {
+    pub fn can_shoot(&self) -> bool {
+        self.last_shot_instant.elapsed().as_secs_f32() >= TIME_BTW_SHOOT_IN_SECONDS
+    }
 }
 
 #[derive(Component)]
