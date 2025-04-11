@@ -326,7 +326,10 @@ pub fn get_circle_collider_from_actual_collider(collider: &Collider) -> Option<C
     if let Some(cuboid) = collider.as_cuboid() {
         let half_extent = cuboid.half_extents();
         Some(Collider::ball(half_extent.length()))
-    } else if let Some(triangle) = collider.as_triangle() {
+    } else if let Some(capsule) = collider.as_capsule() {
+		let (half_height, radius) = (capsule.half_height(), capsule.radius());
+		Some(Collider::ball(half_height + radius))		
+	} else if let Some(triangle) = collider.as_triangle() {
         todo!()
     } else {
         None
