@@ -1,3 +1,4 @@
+use bevy::math::NormedVectorSpace;
 use bevy::{prelude::*, utils::HashSet};
 use bevy_rapier2d::prelude::*;
 
@@ -309,4 +310,25 @@ fn handle_entity_destruction(
 			entity_translation.clone()
 		)
 	));
+}
+
+pub fn check_if_collide(collider_1: &Collider, position_1: Vec2, collider_2: &Collider, position_2: Vec2) -> bool {
+	let collider_2 = if collider_2.as_ball().is_none() {
+		get_circle_collider_from_actual_collider(collider_2).unwrap()
+	} else {
+		collider_2.clone()
+	};
+
+	(position_1 - position_2).norm() <= collider_1.as_ball().unwrap().radius() + collider_2.as_ball().unwrap().radius()
+}
+
+pub fn get_circle_collider_from_actual_collider(collider: &Collider) -> Option<Collider> {
+    if let Some(cuboid) = collider.as_cuboid() {
+        let half_extent = cuboid.half_extents();
+        Some(Collider::ball(half_extent.length()))
+    } else if let Some(triangle) = collider.as_triangle() {
+        todo!()
+    } else {
+        None
+    }
 }

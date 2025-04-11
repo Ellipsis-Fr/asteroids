@@ -107,6 +107,12 @@ impl Default for LaserTimer {
         Self(Timer::from_seconds(1., TimerMode::Once))
     }
 }
+
+impl LaserTimer {
+    pub fn renew(&mut self, duration_in_seconds: f32) {
+        self.0 = Timer::from_seconds(duration_in_seconds, TimerMode::Once);
+    }
+}
 // endregion: --- Common Components
 
 // region:    --- Player Component
@@ -118,21 +124,13 @@ pub struct FromPlayer;
 // endregion: --- Player Component
 
 // region:    --- Enemy Component
-const TIME_BTW_SHOOT_IN_SECONDS: f32 = 3.;
-
 #[derive(Component, Clone)]
 pub struct Enemy {
     pub speed: f32,
     pub detection_range: f32,
     pub attack_range: f32,
     pub health: f32,
-    pub last_shot_instant: Instant
-}
-
-impl Enemy {
-    pub fn can_shoot(&self) -> bool {
-        self.last_shot_instant.elapsed().as_secs_f32() >= TIME_BTW_SHOOT_IN_SECONDS
-    }
+    pub shoot_delay_seconds: f32
 }
 
 #[derive(Component)]
