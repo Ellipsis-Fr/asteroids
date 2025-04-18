@@ -8,12 +8,15 @@ use crate::game::collision::check_if_collide;
 use super::{collision, components::{AIState, DetectionSensor, Enemy, EnemyState, FakeEntities, LaserTimer, Meteor, Player}, screen_overflow, wave::Wave, GameTextures, WinSize, ENEMY_SIZE, SPRITE_SCALE};
 
 const DODGE_ACCURACY: u32 = 4; // enemy movement decomposition number
+const ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING: [u32; 4] = [10, 20, 30, 40];
+const ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITH_MOVING: u32 = 10; 
 
 #[derive(Debug, Eq, PartialEq)]
 enum DodgeStatus {
     Free,
     MustMove,
-    CriticalShoot(RotationDirection, u32)
+    CriticalShoot(RotationDirection, u32),
+    Impossible
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -26,14 +29,29 @@ enum MovementOption {
 
 impl MovementOption {
     fn all_variants() -> Vec<MovementOption> {
-        vec![
-            MovementOption::Stationary,
-            MovementOption::Move(0),
-            MovementOption::Rotation(RotationDirection::Clockwise, 0),
-            MovementOption::Rotation(RotationDirection::CounterClockwise, 0),
-            MovementOption::MoveAndRotation(0, RotationDirection::Clockwise, 0),
-            MovementOption::MoveAndRotation(0, RotationDirection::CounterClockwise, 0)
-        ]
+        let all_move = (1..=DODGE_ACCURACY).into_iter().map(|move_factor| MovementOption::Move(move_factor)).collect::<Vec<_>>();
+        let all_rotations = ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING
+            .into_iter()
+            .flat_map(|angle| [
+                MovementOption::Rotation(RotationDirection::Clockwise, angle),
+                MovementOption::Rotation(RotationDirection::CounterClockwise, angle)
+            ])
+            .collect::<Vec<_>>();
+
+        let all_move_and_rotations = (1..=DODGE_ACCURACY)
+            .into_iter()
+            .flat_map(|move_factor| [
+                MovementOption::MoveAndRotation(move_factor, RotationDirection::Clockwise, ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITH_MOVING),
+                MovementOption::MoveAndRotation(move_factor, RotationDirection::CounterClockwise, ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITH_MOVING)
+            ])
+            .collect::<Vec<_>>();
+
+        // Chain all iterators together and collect into a single Vec
+        std::iter::once(MovementOption::Stationary)
+            .chain(all_move)
+            .chain(all_rotations)
+            .chain(all_move_and_rotations)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -46,6 +64,7 @@ enum RotationDirection {
 #[derive(Debug)]
 struct Threat {
     position: Vec3,
+    direction: Vec3,
     rotation: Quat,                 // useful exlusively for ship threats (cause laser are too small and meteor are circular) 
     distance: f32,
     velocity: Vec2,
@@ -220,6 +239,7 @@ fn detect_threats(
             detected_threats.push(
                 Threat {
                     position: projectile_nearest_position,
+                    direction: projectile_direction,
                     rotation: enemy_transform.rotation,
                     distance: actual_distance,
                     velocity: projectile_velocity.linvel,
@@ -297,6 +317,7 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
     let mut dodge_status = DodgeStatus::Free;
     let mut forbidden_movements = HashSet::new();
     let mut possible_movements_and_notation_for_all_threats = Vec::new(); // liste de listes de mouvements possible associer à des notes : Vec<Vec<(MovementOption, i8)>>
+    let mut enemy_futures_positions_by_movement_option = HashMap::new();
 
     let can_shoot = enemy_laser_timer.0.finished();
     let enemy_collider_circle = collision::get_circle_collider_from_actual_collider(enemy_collider).unwrap();
@@ -304,7 +325,7 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
     for threat in detected_threats {
         let to_threat = threat.position - enemy_transform.translation;
         let threat_futur_position_in_one_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds();
-        let threat_futur_position_in_two_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds() * 2;
+        let threat_futur_position_in_two_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds() * 2.;
         if collision::check_if_collide(&enemy_collider_circle, enemy_transform.translation.truncate(), &threat.collider, threat_futur_position_in_one_frame.truncate()) {
             // verifier direction du vaisseau :
             //  - si elle va vers le projectile alors passer en DodgeStatus::CriticalShoot
@@ -321,34 +342,27 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
 
                 // ! Vérifier calcul (pour obtenir l'angle, et impact du signe)
                 let angle = get_angle_in_radian_between_two_entities(enemy_transform.rotation, to_threat);
-                dodge_status = if angle < 0. {
-                    DodgeStatus::CriticalShoot(RotationDirection::Clockwise, angle.abs() as u32)
+                dodge_status = if angle.abs() < (ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING[ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING.len() - 1] as f32).to_radians() {
+                    if angle > 0. {
+                        DodgeStatus::CriticalShoot(RotationDirection::Clockwise, angle as u32)
+                    } else {
+                        DodgeStatus::CriticalShoot(RotationDirection::CounterClockwise, angle.abs() as u32)
+                    }
                 } else {
-                    DodgeStatus::CriticalShoot(RotationDirection::CounterClockwise, angle as u32)
+                    DodgeStatus::Impossible
                 };
                 break;
             } else {
                 dodge_status = DodgeStatus::MustMove;
-                
-                forbidden_movements.insert(MovementOption::Stationary);
-                
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::Clockwise, 10));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::Clockwise, 20));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::Clockwise, 30));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::Clockwise, 40));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::CounterClockwise, 10));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::CounterClockwise, 20));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::CounterClockwise, 30));
-                forbidden_movements.insert(MovementOption::Rotation(RotationDirection::CounterClockwise, 40));
-                
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 1 / DODGE_ACCURACY, RotationDirection::Clockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 2 / DODGE_ACCURACY, RotationDirection::Clockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 3 / DODGE_ACCURACY, RotationDirection::Clockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 4 / DODGE_ACCURACY, RotationDirection::Clockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 1 / DODGE_ACCURACY, RotationDirection::CounterClockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 2 / DODGE_ACCURACY, RotationDirection::CounterClockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 3 / DODGE_ACCURACY, RotationDirection::CounterClockwise, 10));
-                forbidden_movements.insert(MovementOption::MoveAndRotation(enemy.speed as u32 * 4 / DODGE_ACCURACY, RotationDirection::CounterClockwise, 10));
+
+                for movement_option in MovementOption::all_variants() {
+                    match movement_option {
+                        MovementOption::Stationary => { forbidden_movements.insert(MovementOption::Stationary); },
+                        MovementOption::Rotation(rotation_direction, angle_degree) => { forbidden_movements.insert(MovementOption::Rotation(rotation_direction, angle_degree)); }
+                        MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree) => { forbidden_movements.insert(MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree)); }
+                        _ => ()
+                    }
+                }
 
 
                 // let mut enemy_transform_cloned = enemy_transform.clone();
@@ -363,7 +377,7 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
         }
 
         let mut possible_movements_and_notation = Vec::new(); // liste de listes de mouvements possible associer à des notes : Vec<Vec<(MovementOption, i8)>>
-
+        
         // Iterer sur les deplacement possibles en sautant ceux placés dans la liste des dplcts impossibles
         for movement_option in MovementOption::all_variants() {
             match movement_option {
@@ -372,44 +386,66 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                         possible_movements_and_notation.push((movement_option, 0));
                     }
                 },
-                MovementOption::Move(_) => {
-                    let enemy_forward = enemy_transform.rotation * Vec3::Y;
-                    // fonction de DODGE_ACCURACY tester plusieurs deplacements
-                    for move_factor in 1..=DODGE_ACCURACY {
-                        let enemy_move = enemy.speed as u32 * move_factor / DODGE_ACCURACY;
+                MovementOption::Move(move_factor) => {
+                    if !forbidden_movements.contains(&MovementOption::Move(move_factor)) {
+                        let enemy_forward = enemy_transform.rotation * Vec3::Y;
 
-                        if !forbidden_movements.contains(&MovementOption::Move(enemy_move)) {
-                            // todo: voir pour conserver ces données, pour ne pas avoir à les recalculés pour études avec les menaces d'après
-                            let enemy_futur_position = enemy_transform.translation + enemy_forward * enemy_move as f32 * time.delta_seconds();
-                            if check_if_collide(&enemy_collider_circle, enemy_futur_position.truncate(), &threat.collider, threat.position.truncate()) {
-                                forbidden_movements.insert(MovementOption::Move(enemy_move));
-                                break;
-                            } else {
-                                let mut note = move_factor;
-                                if threat.distance < enemy_futur_position.distance(threat.position) {
-                                    note += 1;
-                                } // todo: peut être voir aussi pour ajouter des points si le dot évolue dans le bon sens
-                                possible_movements_and_notation.push((MovementOption::Move(enemy_move), note));
+                        let enemy_futur_position = match enemy_futures_positions_by_movement_option.get(&MovementOption::Move(move_factor)) {
+                            Some(enemy_futur_position_known) => *enemy_futur_position_known,
+                            None => {
+                                let result = enemy_transform.translation + enemy_forward * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
+                                enemy_futures_positions_by_movement_option.insert(MovementOption::Move(move_factor), result);
+                                result
                             }
+                        };
+
+                        if check_if_collide(&enemy_collider_circle, enemy_futur_position.truncate(), &threat.collider, threat.position.truncate()) {
+                            forbidden_movements.insert(MovementOption::Move(move_factor));
+                            break;
+                        } else {
+                            let mut note = move_factor;
+                            
+                            if threat.distance < enemy_futur_position.distance(threat.position) {
+                                note += 1;
+                            }
+
+                            if threat.threat_dot_product > threat.direction.dot(to_threat.normalize()).clamp(-1., 1.) {
+                                note += 1;
+                            }
+
+                            possible_movements_and_notation.push((MovementOption::Move(move_factor), note));
                         }
                     }
                 },
-                MovementOption::Rotation(rotation_direction, _) => todo!(),
-                MovementOption::MoveAndRotation(_, rotation_direction, _) => todo!(),
+                MovementOption::Rotation(rotation_direction, angle_degree) => {
+                    
+                },
+                MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree) => todo!(),
             }
         }
 
+        // todo: certainement voir pour ajouter la possibilité d'un shoot pour chaque menace pour que s'il n'y a aucune possibilité de mouvement après avoir itéré sur 
+        // tous les projectiles on shoot le projectile à la fois le plus proche et le plus accessible, car sinon c'est que le vaisseau risque de ne plus du tout avoir de porte de sortie
         possible_movements_and_notation_for_all_threats.push(possible_movements_and_notation);
     }
 
+    // todo: comme la liste de mouvement interdit est remplie au fur et à mesure il serait bon de réaliser le filtre des actions par menace à ce moment là
+    // sur chaque liste de possible_movements_and_notation_for_all_threats on y soustrait les éléments présent dans forbidden_movements
+    // puis on crée une liste unique contenant les quelques options de mouvement restantes, c-à-d. celles communes à l'ensemble des menaces
+    // alors si la liste qui en ressort est vide on passe sur l'option de criticalShoot <-- Pour se faire la liste sera forcéent non vide car il aura fallu y persister pour chaque menace les infos de shoot si ceux-ci sont possible
+    // et si la liste est vraiment vide (shoot compris) on passe en dodgeStatus::Impossible 
+    // si non vide on envoie ces infos à la fonction de réalisation de l'action qui sélectionnera celle avec la meilleur note, si égalité on prend au pif
+
     match dodge_status {
+        DodgeStatus::Impossible => (),
         DodgeStatus::CriticalShoot(rotation_direction, angle) => todo!(), // action de tire sur cible
-        _ => todo!() // action de notation puis de réalisation de l'action
+        _ => todo!() // action de filtre puis de réalisation de l'action
     }
 }
 
 fn get_angle_in_radian_between_two_entities(rotation: Quat, direction: Vec3) -> f32 {
     // This gets the forward vector based on rotation
+    let direction = direction.normalize();
     let entity_forward = rotation * Vec3::Y;
     let cross_product = entity_forward.cross(direction);
                     
