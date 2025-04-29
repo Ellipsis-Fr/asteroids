@@ -19,7 +19,24 @@ enum DodgeStatus {
     Impossible
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+enum ActionOption {
+    Movement(MovementOption),
+    Shoot,
+}
+
+impl ActionOption {
+    fn all_variants() -> Vec<ActionOption> {
+        let movement_options = MovementOption::all_variants()
+            .into_iter()
+            .map(ActionOption::Movement)
+            .collect::<Vec<_>>();
+        vec![movement_options, vec![ActionOption::Shoot]].concat()
+    }
+}
+
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 enum MovementOption {
     Stationary,
     Move(u32),                                      // has a value depending on the DODGE_ACCURACY
@@ -300,10 +317,10 @@ fn chase(win_size: &Res<WinSize>, time: &Res<Time>, enemy_transform: &mut Transf
     let direction = (nearest_position - enemy_transform.translation).normalize();
 
     // This gets the forward vector based on rotation
-    let enemy_forward = enemy_transform.rotation * Vec3::Y;
-    let cross_product = enemy_forward.cross(direction);
+    let enemy_direction = enemy_transform.rotation * Vec3::Y;
+    let cross_product = enemy_direction.cross(direction);
                     
-    let dot_product = enemy_forward.normalize().dot(direction).clamp(-1., 1.);
+    let dot_product = enemy_direction.normalize().dot(direction).clamp(-1., 1.);
     let mut angle = dot_product.acos().clamp(0., 10_f32.to_radians());
                     
     let signed_angle = if cross_product.z < 0.0 { -angle } else { angle };
@@ -363,12 +380,6 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                         _ => ()
                     }
                 }
-
-
-                // let mut enemy_transform_cloned = enemy_transform.clone();
-                // enemy_transform_cloned.rotate(Quat::from_rotation_z(10_f32.to_radians()));
-                // let enemy_direction = (enemy_transform_cloned.rotation * Vec3::Y).normalize();
-                // let enemy_dot_product = enemy_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
             }
         } else if collision::check_if_collide(&enemy_collider_circle, enemy_transform.translation.truncate(), &threat.collider, threat_futur_position_in_two_frame.truncate()) {
             dodge_status = DodgeStatus::MustMove;
@@ -388,12 +399,12 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                 },
                 MovementOption::Move(move_factor) => {
                     if !forbidden_movements.contains(&MovementOption::Move(move_factor)) {
-                        let enemy_forward = enemy_transform.rotation * Vec3::Y;
+                        let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
 
                         let enemy_futur_position = match enemy_futures_positions_by_movement_option.get(&MovementOption::Move(move_factor)) {
                             Some(enemy_futur_position_known) => *enemy_futur_position_known,
                             None => {
-                                let result = enemy_transform.translation + enemy_forward * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
+                                let result = enemy_transform.translation + enemy_direction * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
                                 enemy_futures_positions_by_movement_option.insert(MovementOption::Move(move_factor), result);
                                 result
                             }
@@ -409,16 +420,35 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                                 note += 1;
                             }
 
-                            if threat.threat_dot_product > threat.direction.dot(to_threat.normalize()).clamp(-1., 1.) {
+                            if threat.threat_dot_product > threat.direction.dot((threat.position - enemy_futur_position).normalize()).clamp(-1., 1.) {
                                 note += 1;
                             }
 
-                            possible_movements_and_notation.push((MovementOption::Move(move_factor), note));
+                            possible_movements_and_notation.push((movement_option, note));
                         }
                     }
                 },
                 MovementOption::Rotation(rotation_direction, angle_degree) => {
+                    // let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
+                    // threatened_dot_product: enemy_direction.dot(to_projectile.normalize()).clamp(-1., 1.),
+
+                    if threat.threat_dot_product <= 0. {
+                        possible_movements_and_notation.push((movement_option, 0));
+                    } else {
+
+                    }
                     
+                    let enemy_actual_direction = (enemy_transform.rotation * Vec3::Y).normalize();
+
+                    // todo : evaluation va porter sur l'angle Bêta (threat.threatened_dot_product) donc entre direction du vaisseau et to_threat
+                    // si threat.dot_product <= 0 (angle >= 90°) alors ça n'est pas grave si l'angle Bêta diminue et les points sont égales à l'angle / 10 
+                    // par contre si threat.dot_product > 0 alors l'ajouter mais avec 0 points 
+                    // ajout car cf.F2 M3 est à 50° par rapport à direction actuelle du vaisseau mais va gagner jusqu'à 4 points vis à vis d'M1 et c'est la meilleure solution
+
+                    // let mut enemy_transform_cloned = enemy_transform.clone();
+                    // enemy_transform_cloned.rotate(Quat::from_rotation_z(10_f32.to_radians()));
+                    // let enemy_direction = (enemy_transform_cloned.rotation * Vec3::Y).normalize();
+                    // let enemy_dot_product = enemy_direction.dot(to_projectile.normalize()).clamp(-1., 1.);
                 },
                 MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree) => todo!(),
             }
@@ -446,10 +476,10 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
 fn get_angle_in_radian_between_two_entities(rotation: Quat, direction: Vec3) -> f32 {
     // This gets the forward vector based on rotation
     let direction = direction.normalize();
-    let entity_forward = rotation * Vec3::Y;
-    let cross_product = entity_forward.cross(direction);
+    let entity_direction = rotation * Vec3::Y;
+    let cross_product = entity_direction.cross(direction);
                     
-    let dot_product = entity_forward.normalize().dot(direction).clamp(-1., 1.);
+    let dot_product = entity_direction.normalize().dot(direction).clamp(-1., 1.);
     let mut angle = dot_product.acos();
 
     if cross_product.z < 0.0 { -angle } else { angle }
