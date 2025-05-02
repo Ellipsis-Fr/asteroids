@@ -32,7 +32,7 @@ impl ActionOption {
             .map(ActionOption::Movement)
             .collect::<Vec<_>>();
 
-        let shoot_options = vec![ActionOption::Shoot((RotationDirection::Clockwise, 0), 0), ActionOption::Shoot((RotationDirection::CounterClockwise, 0), 0)];
+        let shoot_options = vec![ActionOption::Shoot((RotationDirection::Clockwise, 0), 0)];
         
         vec![movement_options, shoot_options].concat()
     }
@@ -200,7 +200,7 @@ fn enemy_ai_system(
                 ai_state.state = if distance <= enemy.attack_range {
                     EnemyState::Attack
                 } else if distance <= enemy.detection_range {
-                    EnemyState::Chase
+                    EnemyState::Idle
                 } else {
                     EnemyState::Patrol
                 };
@@ -365,9 +365,9 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                 let angle = get_angle_in_radian_between_two_entities(enemy_transform.rotation, to_threat);
                 dodge_status = if angle.abs() < (ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING[ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING.len() - 1] as f32).to_radians() {
                     if angle > 0. {
-                        DodgeStatus::CriticalShoot(RotationDirection::Clockwise, angle as u32)
+                        DodgeStatus::CriticalShoot(RotationDirection::Clockwise, angle.to_degrees() as u32)
                     } else {
-                        DodgeStatus::CriticalShoot(RotationDirection::CounterClockwise, angle.abs() as u32)
+                        DodgeStatus::CriticalShoot(RotationDirection::CounterClockwise, angle.abs().to_degrees() as u32)
                     }
                 } else {
                     DodgeStatus::Impossible
@@ -435,13 +435,12 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                             }
                         },
                         MovementOption::Rotation(rotation_direction, angle_degree) => {
-                            let angle_degree = match rotation_direction {
-                                RotationDirection::Clockwise => angle_degree as f32,
-                                RotationDirection::CounterClockwise => angle_degree as f32 * -1.
-                            }
-                            // let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
-                            // threatened_dot_product: enemy_direction.dot(to_projectile.normalize()).clamp(-1., 1.),
                             if !forbidden_movements.contains(&movement_option) {
+                                let angle_degree = match rotation_direction {
+                                    RotationDirection::Clockwise => angle_degree as f32,
+                                    RotationDirection::CounterClockwise => angle_degree as f32 * -1.
+                                };
+
                                 if threat.threat_dot_product <= 0. {
                                     possible_actions_and_notation.push((action_option, 0));
                                 } else {
@@ -450,9 +449,17 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                                         enemy_transform_cloned.rotate(Quat::from_rotation_z((angle_degree).to_radians()));
                                         (enemy_transform_cloned.rotation * Vec3::Y).normalize()
                                     };
+
+                                    let enemy_futur_position = match enemy_futures_positions_by_movement_option.get(&movement_option) {
+                                        Some(enemy_futur_position_known) => *enemy_futur_position_known,
+                                        None => {
+                                            let result = enemy_transform.translation + enemy_new_direction * threat.distance;
+                                            enemy_futures_positions_by_movement_option.insert(movement_option, result);
+                                            result
+                                        }
+                                    };
     
-                                    let enemy_new_postion = enemy_transform.translation + enemy_new_direction * threat.distance;
-                                    if check_if_collide(&enemy_collider_circle, enemy_new_postion.truncate(), &threat.collider, threat.position.truncate()) {
+                                    if check_if_collide(&enemy_collider_circle, enemy_futur_position.truncate(), &threat.collider, threat.position.truncate()) {
                                         let threat_new_position = threat.position + threat.direction * threat.distance;
                                         if check_if_collide(&enemy_collider_circle, enemy_transform.translation.truncate(), &threat.collider, threat_new_position.truncate()) {
                                             let threat_futur_position_in_three_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds() * 3.;
@@ -469,41 +476,125 @@ fn dodge(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy_collider:
                                     } else {
                                         possible_actions_and_notation.push((action_option, angle_degree as i32 / 10));
                                     }
-    
-                                    
-                                    // todo : evaluation va porter sur l'angle Bêta (threat.threatened_dot_product) donc entre direction du vaisseau et to_threat
-                                    // si threat.dot_product <= 0 (angle >= 90°) alors ça n'est pas grave si l'angle Bêta diminue et les points sont égales à l'angle / 10 
-                                    // par contre si threat.dot_product > 0 alors l'ajouter mais avec 0 points 
-                                    // ajout car cf.F2 M3 est à 50° par rapport à direction actuelle du vaisseau mais va gagner jusqu'à 4 points vis à vis d'M1 et c'est la meilleure solution
-                
-    
                                 }
                             }
                         },
-                        MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree) => todo!(),
+                        MovementOption::MoveAndRotation(move_factor, rotation_direction, angle_degree) => {
+                            if !forbidden_movements.contains(&movement_option) {
+                                let angle_degree = match rotation_direction {
+                                    RotationDirection::Clockwise => angle_degree as f32,
+                                    RotationDirection::CounterClockwise => angle_degree as f32 * -1.
+                                };    
+
+                                let enemy_new_direction = {
+                                    let mut enemy_transform_cloned = enemy_transform.clone();
+                                    enemy_transform_cloned.rotate(Quat::from_rotation_z((angle_degree).to_radians()));
+                                    (enemy_transform_cloned.rotation * Vec3::Y).normalize()
+                                };
+
+        
+                                let enemy_futur_position = match enemy_futures_positions_by_movement_option.get(&movement_option) {
+                                    Some(enemy_futur_position_known) => *enemy_futur_position_known,
+                                    None => {
+                                        let result = enemy_transform.translation + enemy_new_direction * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
+                                        enemy_futures_positions_by_movement_option.insert(movement_option, result);
+                                        result
+                                    }
+                                };
+
+                                if check_if_collide(&enemy_collider_circle, enemy_futur_position.truncate(), &threat.collider, threat.position.truncate()) {
+                                    forbidden_movements.insert(movement_option);
+                                } else {
+                                    let threat_new_position = threat.position + threat.direction * threat.distance;
+                                    let threat_can_collide_with_actual_enemy_position = check_if_collide(&enemy_collider_circle, enemy_transform.translation.truncate(), &threat.collider, threat_new_position.truncate());
+                                    let threat_can_collide_with_new_enemy_position = check_if_collide(&enemy_collider_circle, enemy_futur_position.truncate(), &threat.collider, threat_new_position.truncate());
+
+                                    if threat_can_collide_with_actual_enemy_position {
+                                        if threat_can_collide_with_new_enemy_position {
+                                            let threat_futur_position_in_three_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds() * 3.;
+                                            let threat_distance_traveled_by_frame = threat.position.distance(threat_futur_position_in_one_frame);
+                                            let threat_distance_remaining_after_three_frame = enemy_transform.translation.distance(threat_futur_position_in_three_frame);
+                                            if threat_distance_remaining_after_three_frame < threat_distance_traveled_by_frame {
+                                                forbidden_movements.insert(movement_option);
+                                            } else {
+                                                possible_actions_and_notation.push((action_option, -1));
+                                            }
+                                        } else {
+                                            let note = move_factor as i32 + {
+                                                let new_distance = enemy_transform.translation.distance(threat.position);
+                                                if threat.distance < new_distance {
+                                                    1
+                                                } else {
+                                                    0
+                                                }
+                                            };
+                                            possible_actions_and_notation.push((action_option, note));
+                                        }
+                                    } else {
+                                        if threat_can_collide_with_new_enemy_position {
+                                            let threat_futur_position_in_three_frame = threat.position + threat.velocity.extend(0.) * time.delta_seconds() * 3.;
+                                            let threat_distance_traveled_by_frame = threat.position.distance(threat_futur_position_in_one_frame);
+                                            let threat_distance_remaining_after_three_frame = enemy_transform.translation.distance(threat_futur_position_in_three_frame);
+                                            if threat_distance_remaining_after_three_frame < threat_distance_traveled_by_frame {
+                                                forbidden_movements.insert(movement_option);
+                                            } else {
+                                                possible_actions_and_notation.push((action_option, -2));
+                                            }
+                                        } else {
+                                            let note = move_factor as i32 + {
+                                                let new_distance = enemy_transform.translation.distance(threat.position);
+                                                if threat.distance < new_distance {
+                                                    1
+                                                } else {
+                                                    0
+                                                }
+                                            };
+                                            possible_actions_and_notation.push((action_option, note));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
-                ActionOption::Shoot(_, _) => todo!()
+                ActionOption::Shoot(_, _) => {
+                    if threat.threatened_dot_product > 0. {        
+                        // ! Vérifier calcul (pour obtenir l'angle, et impact du signe)
+                        let angle = get_angle_in_radian_between_two_entities(enemy_transform.rotation, to_threat);
+                        if angle.abs() < (ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING[ALLOWED_ROTATION_ANGLE_IN_DEGREE_IN_ONE_FRAME_WITHOUT_MOVING.len() - 1] as f32).to_radians() {
+                            let rotation_direction = if angle > 0. {
+                                RotationDirection::Clockwise
+                            } else {
+                                RotationDirection::CounterClockwise
+                            };
+
+                            possible_actions_and_notation.push((ActionOption::Shoot((rotation_direction, angle.abs().to_degrees() as u32), threat.distance as u32), 0));
+                        }
+                    }
+                }
             }
         }
 
-        // todo: certainement voir pour ajouter la possibilité d'un shoot pour chaque menace pour que s'il n'y a aucune possibilité de mouvement après avoir itéré sur 
-        // tous les projectiles on shoot le projectile à la fois le plus proche et le plus accessible, car sinon c'est que le vaisseau risque de ne plus du tout avoir de porte de sortie
         possible_actions_and_notation_for_all_threats.push(possible_actions_and_notation);
-        
     }
 
-    // todo: comme la liste de mouvement interdit est remplie au fur et à mesure il serait bon de réaliser le filtre des actions par menace à ce moment là
-    // sur chaque liste de possible_movements_and_notation_for_all_threats on y soustrait les éléments présent dans forbidden_movements
-    // puis on crée une liste unique contenant les quelques options de mouvement restantes, c-à-d. celles communes à l'ensemble des menaces
-    // alors si la liste qui en ressort est vide on passe sur l'option de criticalShoot <-- Pour se faire la liste sera forcéent non vide car il aura fallu y persister pour chaque menace les infos de shoot si ceux-ci sont possible
-    // et si la liste est vraiment vide (shoot compris) on passe en dodgeStatus::Impossible 
-    // si non vide on envoie ces infos à la fonction de réalisation de l'action qui sélectionnera celle avec la meilleur note, si égalité on prend au pif
+    let final_possible_actions = reduce_possible_actions(possible_actions_and_notation_for_all_threats, forbidden_movements);
+    match final_possible_actions {
+        (None, None) => dodge_status = DodgeStatus::Impossible,
+        (None, Some(ActionOption::Shoot((rotation_direction, angle), _))) => dodge_status = DodgeStatus::CriticalShoot(rotation_direction, angle),
+        (None, Some(_)) => panic!(),
+        (_, _) =>  ()
+    }
+    
 
     match dodge_status {
         DodgeStatus::Impossible => (),
-        DodgeStatus::CriticalShoot(rotation_direction, angle) => todo!(), // action de tire sur cible
-        _ => todo!() // action de filtre puis de réalisation de l'action
+        DodgeStatus::CriticalShoot(rotation_direction, angle) => {
+            if can_shoot {
+                critical_shoot(enemy_transform, enemy, enemy_laser_timer, rotation_direction, angle);
+            }
+        },
+        _ => move_enemy(time, enemy_transform, enemy, final_possible_actions.0.unwrap()) // action de filtre puis de réalisation de l'action
     }
 }
 
@@ -517,4 +608,108 @@ fn get_angle_in_radian_between_two_entities(rotation: Quat, direction: Vec3) -> 
     let mut angle = dot_product.acos();
 
     if cross_product.z < 0.0 { -angle } else { angle }
+}
+
+fn reduce_possible_actions(possible_actions_and_notation_for_all_threats: Vec<Vec<(ActionOption, i32)>>, forbidden_movements: HashSet<MovementOption>) -> (Option<ActionOption>, Option<ActionOption>) {
+    let mut possible_movement_and_notation = HashSet::new();
+    let mut possible_shoot_and_distance = None;
+
+
+    for (index, possible_actions_and_notation_by_threat) in possible_actions_and_notation_for_all_threats.iter().enumerate() {
+        let mut possible_action_just_added = HashSet::new();
+
+        for (possible_action, notation_action) in possible_actions_and_notation_by_threat {
+            match possible_action {
+                ActionOption::Movement(movement_option) => {
+                    if forbidden_movements.contains(movement_option) {
+                        continue;
+                    } else {
+                        if index == 0 {
+                            possible_movement_and_notation.insert((movement_option.clone(), *notation_action));
+                            possible_action_just_added.insert(movement_option.clone());
+                        } else {
+                            for (movement, notation) in possible_movement_and_notation.clone() {
+                                if *movement_option == movement {
+                                    possible_movement_and_notation.remove(&(movement, notation));
+                                    possible_movement_and_notation.insert((movement, notation + *notation_action));
+                                    possible_action_just_added.insert(movement_option.clone());
+                                }
+                            }
+                        }
+                    }
+                },
+                ActionOption::Shoot(shoot_direction, shoot_ditance) => {
+                    match possible_shoot_and_distance {
+                        Some((_, distance)) => {
+                            if *shoot_ditance < distance {
+                                possible_shoot_and_distance = Some((shoot_direction.clone(), *shoot_ditance));
+                            }
+                        },
+                        None => {
+                            possible_shoot_and_distance = Some((shoot_direction.clone(), *shoot_ditance));
+                        }
+                    }
+                }
+            }
+
+        }
+
+        possible_movement_and_notation = possible_movement_and_notation.into_iter().filter(|(movement, _)| possible_action_just_added.contains(movement)).collect::<HashSet<_>>();
+        
+    }
+
+    let final_possible_movement_and_notation = possible_movement_and_notation.iter().max_by_key(|(_, notation)| *notation).map(|(movement, _)| ActionOption::Movement(*movement));
+    let final_possible_shoot_and_distance = match possible_shoot_and_distance {
+        Some((rotation_direction, distance)) => Some(ActionOption::Shoot(rotation_direction, distance)),
+        None => None
+    };
+
+    (final_possible_movement_and_notation, final_possible_shoot_and_distance)
+}
+
+fn critical_shoot(enemy_transform: &mut Mut<Transform>, enemy: &Enemy, enemy_laser_timer: &mut LaserTimer, rotation_direction: RotationDirection, angle: u32) {                    
+    let signed_angle_in_radians = match rotation_direction {
+        RotationDirection::Clockwise => (angle as f32).to_radians(),
+        RotationDirection::CounterClockwise => (angle as f32).to_radians() * -1.,
+    };
+                    
+    enemy_transform.rotate(Quat::from_rotation_z(signed_angle_in_radians));
+    enemy_laser_timer.renew(enemy.shoot_delay_seconds);
+    // todo : ajouter event de shoot
+}
+
+fn move_enemy(time: &Res<Time>, enemy_transform: &mut Mut<Transform>, enemy: &Enemy, action: ActionOption) {
+    
+    match action {
+        ActionOption::Movement(movement) => {
+            match movement {
+                MovementOption::Stationary => (),
+                MovementOption::Move(move_factor) => {
+                    let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
+                    enemy_transform.translation += enemy_direction * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
+                },
+                MovementOption::Rotation(rotation_direction, angle) => {
+                    let signed_angle_in_radians = match rotation_direction {
+                        RotationDirection::Clockwise => (angle as f32).to_radians(),
+                        RotationDirection::CounterClockwise => (angle as f32).to_radians() * -1.,
+                    };
+                                    
+                    enemy_transform.rotate(Quat::from_rotation_z(signed_angle_in_radians));
+                },
+                MovementOption::MoveAndRotation(move_factor, rotation_direction, angle) => {
+                    let signed_angle_in_radians = match rotation_direction {
+                        RotationDirection::Clockwise => (angle as f32).to_radians(),
+                        RotationDirection::CounterClockwise => (angle as f32).to_radians() * -1.,
+                    };
+                                    
+                    enemy_transform.rotate(Quat::from_rotation_z(signed_angle_in_radians));
+                    let enemy_direction = (enemy_transform.rotation * Vec3::Y).normalize();
+                    enemy_transform.translation += enemy_direction * ((enemy.speed as u32 * move_factor / DODGE_ACCURACY) as f32) * time.delta_seconds();
+                }
+            }
+        },
+        _ => panic!()
+    };
+
+
 }
