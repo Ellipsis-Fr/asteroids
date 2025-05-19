@@ -4,14 +4,14 @@
     speed: [20., 20.]
     kind: 1
     level: 1
-  - weight: 20.
-    speed: [35., 60.]
-    kind: 1
-    level: 1
-  - weight: 30.
-    speed: [45., 60.]
-    kind: 3
-    level: 1
+  # - weight: 20.
+  #   speed: [35., 60.]
+  #   kind: 1
+  #   level: 1
+  # - weight: 30.
+  #   speed: [45., 60.]
+  #   kind: 3
+  #   level: 1
   enemies: 1
 
 2:

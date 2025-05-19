@@ -313,13 +313,28 @@ fn handle_entity_destruction(
 }
 
 pub fn check_if_collide(collider_1: &Collider, position_1: Vec2, collider_2: &Collider, position_2: Vec2) -> bool {
-	let collider_2 = if collider_2.as_ball().is_none() {
-		get_circle_collider_from_actual_collider(collider_2).unwrap()
-	} else {
-		collider_2.clone()
+	let get_circle_collider = | collider: &Collider | -> Collider {
+		if collider.as_ball().is_none() {
+			get_circle_collider_from_actual_collider(collider).unwrap()
+		} else {
+			collider.clone()
+		}
 	};
 
-	(position_1 - position_2).norm() <= collider_1.as_ball().unwrap().radius() + collider_2.as_ball().unwrap().radius()
+	let circle_collider_1 = get_circle_collider(collider_1);
+	let circle_collider_2 = get_circle_collider(collider_2);
+
+	(position_1 - position_2).norm() <= circle_collider_1.as_ball().unwrap().radius() + circle_collider_2.as_ball().unwrap().radius()
+}
+
+pub fn check_if_collide_after_moving(collider_1: &Collider, position_1: Vec3, direction_1: Vec3, collider_2: &Collider, position_2: Vec3, direction_2: Vec3, distance: f32) -> (bool, bool) {
+	let future_position_1 = position_1 + direction_1 * distance;
+	let collide_after_move_1 = check_if_collide(collider_1, future_position_1.truncate(), collider_2, position_2.truncate());
+
+	let future_position_2 = position_2 + direction_2 * distance;
+	let collide_after_move_2 = check_if_collide(collider_1, position_1.truncate(), collider_2, future_position_2.truncate());
+	
+	(collide_after_move_1, collide_after_move_2)
 }
 
 pub fn get_circle_collider_from_actual_collider(collider: &Collider) -> Option<Collider> {
@@ -334,4 +349,107 @@ pub fn get_circle_collider_from_actual_collider(collider: &Collider) -> Option<C
     } else {
         None
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Debug;
+
+    use super::*;
+
+	
+    #[test]
+    fn test_check_if_collide() {
+        // Test case 1: Colliding circles
+        let collider1 = Collider::ball(5.0);
+        let position1 = Vec2::new(0.0, 0.0);
+        let collider2 = Collider::ball(5.0);
+        let position2 = Vec2::new(8.0, 0.0);
+        
+        assert!(check_if_collide(&collider1, position1, &collider2, position2));
+        
+        // Test case 2: Non-colliding circles
+        let position2_far = Vec2::new(15.0, 0.0);
+        assert!(!check_if_collide(&collider1, position1, &collider2, position2_far));
+        
+        // Test case 3: Exactly touching circles
+        let position2_touching = Vec2::new(10.0, 0.0);
+        assert!(check_if_collide(&collider1, position1, &collider2, position2_touching));
+        
+        // Test case 4: Different sized circles
+        let collider1_small = Collider::ball(2.0);
+        let collider2_large = Collider::ball(8.0);
+        let position2_edge = Vec2::new(9.0, 0.0);
+        
+        assert!(check_if_collide(&collider1_small, position1, &collider2_large, position2_edge));
+    }
+    
+    #[test]
+    fn test_check_if_collide_after_moving() {
+        let collider1 = Collider::ball(5.0);
+        let position1 = Vec3::new(0.0, 0.0, 0.0);
+        let direction1 = Vec3::new(1.0, 0.0, 0.0).normalize();
+        
+        let collider2 = Collider::ball(5.0);
+        let position2 = Vec3::new(20.0, 0.0, 0.0);
+        let direction2 = Vec3::new(-1.0, 0.0, 0.0).normalize();
+        
+        // Test case 1: Moving toward each other, will collide
+        let (collide1, collide2) = check_if_collide_after_moving(
+            &collider1, position1, direction1, 
+            &collider2, position2, direction2, 
+            10.0
+        );
+        assert!(collide1);
+        assert!(collide2);
+        
+        // Test case 2: Moving toward each other, but not far enough to collide
+        let (collide1, collide2) = check_if_collide_after_moving(
+            &collider1, position1, direction1, 
+            &collider2, position2, direction2, 
+            5.0
+        );
+        assert!(!collide1);
+        assert!(!collide2);
+        
+        // Test case 3: Moving away from each other
+        let direction1_away = Vec3::new(-1.0, 0.0, 0.0).normalize();
+        let direction2_away = Vec3::new(1.0, 0.0, 0.0).normalize();
+        
+        let (collide1, collide2) = check_if_collide_after_moving(
+            &collider1, position1, direction1_away, 
+            &collider2, position2, direction2_away, 
+            10.0
+        );
+        assert!(!collide1);
+        assert!(!collide2);
+    }
+    
+    #[test]
+    fn test_get_circle_collider_from_actual_collider() {
+        // Test case 1: Cuboid collider
+        let cuboid_collider = Collider::cuboid(3.0, 4.0);
+        let circle_collider = get_circle_collider_from_actual_collider(&cuboid_collider);
+        
+        assert!(circle_collider.is_some());
+        let circle = circle_collider.unwrap();
+        assert!(circle.as_ball().is_some());
+        assert_eq!(circle.as_ball().unwrap().radius(), 5.0); // sqrt(3^2 + 4^2) = 5
+        
+        // Test case 2: Capsule collider
+        let capsule_collider = Collider::capsule_y(4.0, 3.0); // half_height = 4.0, radius = 3.0
+        let circle_collider = get_circle_collider_from_actual_collider(&capsule_collider);
+        
+        assert!(circle_collider.is_some());
+        let circle = circle_collider.unwrap();
+        assert!(circle.as_ball().is_some());
+        assert_eq!(circle.as_ball().unwrap().radius(), 7.0); // half_height + radius = 4.0 + 3.0 = 7.0
+        
+        // Test case 3: Ball collider (should return None as it's already a circle)
+        let ball_collider = Collider::ball(5.0);
+        let circle_collider = get_circle_collider_from_actual_collider(&ball_collider);
+        
+        assert!(circle_collider.is_none());
+    }
+
 }
